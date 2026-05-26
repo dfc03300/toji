@@ -3,6 +3,7 @@ services:
     name: toji
     runtime: node
     plan: free
+    autoDeploy: true
     buildCommand: npm install && python3 -m pip install -r requirements.txt
     startCommand: npm start
     envVars:

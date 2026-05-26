@@ -207,6 +207,10 @@ input {
   display: block;
 }
 
+.top-history-button {
+  margin-top: 14px;
+}
+
 .secondary-actions {
   margin-top: auto;
   padding-top: 12px;
