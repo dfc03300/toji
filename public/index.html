@@ -10,13 +10,8 @@
     <main class="app-shell">
       <aside class="sidebar">
         <button class="brand-home" type="button" id="brandHomeBtn" aria-label="TojiWorks 메인 화면으로">
-          <span class="toji-icon" aria-hidden="true">
-            <span></span>
-          </span>
           <strong>TojiWorks</strong>
         </button>
-
-        <button class="text-button muted top-history-button" type="button" id="historyViewBtn">작업 히스토리</button>
 
         <label class="file-row" id="dropzone">
           <input id="fileInput" type="file" accept=".xlsx" />
@@ -24,9 +19,18 @@
           <small id="fileMeta">.xlsx 파일 선택</small>
         </label>
 
-        <button class="text-button primary" id="processBtn" disabled>파일 분석</button>
+        <button class="text-button sidebar-action" id="processBtn" disabled>파일 분석</button>
 
-        <a class="text-button disabled" id="downloadBtn" href="#" download>엑셀 다운로드</a>
+        <a class="text-button sidebar-action disabled" id="downloadBtn" href="#" download>엑셀 다운로드</a>
+
+        <button class="text-button sidebar-action" type="button" id="historyViewBtn">작업관리</button>
+
+        <section class="sidebar-history" aria-label="최근 작업 파일">
+          <div class="sidebar-section-title">최근</div>
+          <div class="sidebar-history-list" id="sidebarHistoryList">
+            <button type="button" class="sidebar-history-empty">작업 파일 없음</button>
+          </div>
+        </section>
 
         <div class="secondary-actions">
           <button class="text-button muted" type="button" id="officeBtn">Office365 편집</button>
@@ -71,19 +75,15 @@
         <div class="gsi-dialog-head">
           <strong>개별공시지가 조회</strong>
           <div class="gsi-head-actions">
-            <a class="plain-button" href="https://www.realtyprice.kr/notice/m/gsi/search.do" target="_blank" rel="noreferrer">공시가격알리미에서 검증 ↗</a>
+            <button class="plain-button" type="button" id="gsiSourceToggle">원본 검증</button>
             <button class="plain-button" type="button" id="gsiDialogClose">닫기</button>
           </div>
         </div>
         <div class="gsi-dialog-body">
           <form class="gsi-search-bar" id="gsiSearchForm">
-            <div class="search-mode-tabs" role="radiogroup" aria-label="검색 방식">
-              <label><input type="radio" name="gsiSearchMode" value="parcel" checked /> 지번</label>
-              <label><input type="radio" name="gsiSearchMode" value="road" /> 도로명</label>
-            </div>
             <div class="gsi-search-row">
               <div class="autocomplete-field">
-                <input id="gsiKeyword" autocomplete="off" placeholder="예: 성동 성수동1가 656-938" />
+                <input id="gsiKeyword" autocomplete="off" placeholder="주소 또는 지번을 입력하세요" />
                 <div class="suggest-list hidden" id="gsiSuggestList"></div>
               </div>
               <input class="gsi-year" name="notice_year" placeholder="연도" />
@@ -106,6 +106,17 @@
           </div>
           <p class="gsi-footer-note">공시지가 데이터는 캐시를 사용하지 않고 realtyprice.kr API에서 실시간 조회만 사용합니다.</p>
         </div>
+        <aside class="gsi-source-panel" id="gsiSourcePanel" aria-label="공시가격알리미 원본 검증">
+          <div class="gsi-source-head">
+            <strong>공시가격알리미 원본</strong>
+            <div>
+              <a href="https://www.realtyprice.kr/notice/m/gsi/search.do" target="_blank" rel="noreferrer">새 창</a>
+              <button type="button" id="gsiSourceClose">접기</button>
+            </div>
+          </div>
+          <iframe title="공시가격알리미 원본 페이지" src="https://www.realtyprice.kr/notice/m/gsi/search.do"></iframe>
+          <p>원본 페이지가 보이지 않으면 새 창으로 열어 검증하세요.</p>
+        </aside>
       </dialog>
 
       <section class="workspace dev-workspace hidden" id="devView">

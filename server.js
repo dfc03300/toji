@@ -844,7 +844,8 @@ async function verifyGsi(req, res, url) {
 }
 
 async function suggestGsi(req, res, url) {
-  const mode = url.searchParams.get("mode") === "road" ? "road" : "parcel";
+  const modeParam = url.searchParams.get("mode");
+  const mode = modeParam === "road" || modeParam === "parcel" ? modeParam : "auto";
   const keyword = url.searchParams.get("q") || "";
   const fetchedAt = new Date().toISOString();
   if (keyword.trim().length < 2) {
@@ -852,9 +853,18 @@ async function suggestGsi(req, res, url) {
     return;
   }
   try {
-    const suggestions = mode === "road"
-      ? await suggestRoad(keyword)
-      : await suggestParcel(keyword);
+    let suggestions;
+    if (mode === "road") {
+      suggestions = await suggestRoad(keyword);
+    } else if (mode === "parcel") {
+      suggestions = await suggestParcel(keyword);
+    } else {
+      const [parcelSuggestions, roadSuggestions] = await Promise.all([
+        suggestParcel(keyword),
+        suggestRoad(keyword)
+      ]);
+      suggestions = [...parcelSuggestions, ...roadSuggestions].slice(0, 12);
+    }
     sendJson(res, 200, {
       mode,
       keyword,

@@ -61,6 +61,8 @@ const els = {
   saveCellsBtn: document.querySelector("#saveCellsBtn"),
   gsiDialog: document.querySelector("#gsiDialog"),
   gsiDialogClose: document.querySelector("#gsiDialogClose"),
+  gsiSourceToggle: document.querySelector("#gsiSourceToggle"),
+  gsiSourceClose: document.querySelector("#gsiSourceClose"),
   gsiSearchForm: document.querySelector("#gsiSearchForm"),
   gsiKeyword: document.querySelector("#gsiKeyword"),
   gsiSuggestList: document.querySelector("#gsiSuggestList"),
@@ -91,6 +93,7 @@ const els = {
   historyUploadInput: document.querySelector("#historyUploadInput"),
   historyHidePending: document.querySelector("#historyHidePending"),
   historyCount: document.querySelector("#historyCount"),
+  sidebarHistoryList: document.querySelector("#sidebarHistoryList"),
 };
 
 const historyPageSize = 10;
@@ -276,9 +279,34 @@ function upsertHistory(item) {
   renderHistory();
 }
 
+function renderSidebarHistory(items) {
+  if (!els.sidebarHistoryList) return;
+  const collapsedCount = 5;
+  const recent = items.slice(0, collapsedCount);
+  if (!recent.length) {
+    els.sidebarHistoryList.innerHTML = `<button type="button" class="sidebar-history-empty">작업 파일 없음</button>`;
+    return;
+  }
+  const rows = recent.map((item, index) => {
+    const isDone = Boolean(item.downloadUrl);
+    const title = item.fileName || "이름 없는 파일";
+    const active = index === 0 ? " active" : "";
+    return `
+      <button type="button" class="sidebar-history-item${active}" data-sidebar-history-id="${escapeHtml(item.jobId)}" title="${escapeHtml(title)}">
+        <span>${escapeHtml(title)}</span>
+      </button>
+    `;
+  }).join("");
+  const more = items.length > collapsedCount
+    ? `<span class="sidebar-history-more" data-sidebar-history-more="true">더보기</span>`
+    : "";
+  els.sidebarHistoryList.innerHTML = `${rows}${more}`;
+}
+
 function renderHistory() {
   const hidePending = els.historyHidePending?.checked;
   const all = getHistory().sort((a, b) => parseHistoryTime(b) - parseHistoryTime(a));
+  renderSidebarHistory(all);
   const history = hidePending ? all.filter((item) => item.downloadUrl) : all;
   setText(els.historyCount, `총 ${history.length}개`);
   const totalPages = Math.max(1, Math.ceil(history.length / historyPageSize));
@@ -302,7 +330,7 @@ function renderHistory() {
       : `<button class="status-label pending" type="button" data-run-history-id="${escapeHtml(item.jobId)}">대기</button>`;
     const version = isDone ? item.version || "-" : "-";
     return `
-      <div class="history-item">
+      <div class="history-item" data-history-row-id="${escapeHtml(item.jobId)}">
         <div>${start + index + 1}</div>
         <div>${escapeHtml(item.createdAt || "-")}</div>
         <div><strong>${escapeHtml(item.fileName || "-")}</strong></div>
@@ -439,7 +467,7 @@ function gsiParamsFromForm() {
 }
 
 function gsiSearchMode() {
-  return new FormData(els.gsiSearchForm).get("gsiSearchMode") || "parcel";
+  return "auto";
 }
 
 function renderSuggestions(items) {
@@ -744,6 +772,15 @@ els.gsiDialogClose.addEventListener("click", () => {
   els.gsiDialog.close();
 });
 
+function toggleGsiSourcePanel(force) {
+  const next = typeof force === "boolean" ? force : !els.gsiDialog.classList.contains("source-open");
+  els.gsiDialog.classList.toggle("source-open", next);
+  els.gsiSourceToggle?.setAttribute("aria-expanded", String(next));
+}
+
+els.gsiSourceToggle?.addEventListener("click", () => toggleGsiSourcePanel());
+els.gsiSourceClose?.addEventListener("click", () => toggleGsiSourcePanel(false));
+
 els.gsiKeyword.addEventListener("keydown", (event) => {
   if (els.gsiSuggestList.classList.contains("hidden")) return;
   const buttons = [...els.gsiSuggestList.querySelectorAll("button")];
@@ -783,17 +820,6 @@ els.gsiKeyword.addEventListener("input", () => {
       els.gsiSuggestList.classList.remove("hidden");
     });
   }, 250);
-});
-
-els.gsiSearchForm.querySelectorAll("input[name='gsiSearchMode']").forEach((input) => {
-  input.addEventListener("change", () => {
-    selectedGsiSuggestion = null;
-    setText(els.gsiSelectedAddress, "주소 후보를 선택해 주세요.");
-    fetchGsiSuggestions().catch((error) => {
-      els.gsiSuggestList.innerHTML = `<div class="suggest-empty">${escapeHtml(error.message)}</div>`;
-      els.gsiSuggestList.classList.remove("hidden");
-    });
-  });
 });
 
 els.gsiSuggestList.addEventListener("click", (event) => {
@@ -855,6 +881,23 @@ els.backToMainBtn.addEventListener("click", () => {
 els.historyViewBtn.addEventListener("click", () => {
   renderHistory();
   showView("history");
+});
+
+els.sidebarHistoryList?.addEventListener("click", (event) => {
+  if (event.target.closest("[data-sidebar-history-more]")) {
+    renderHistory();
+    showView("history");
+    return;
+  }
+  const button = event.target.closest("[data-sidebar-history-id]");
+  renderHistory();
+  showView("history");
+  if (!button) return;
+  const target = button.dataset.sidebarHistoryId;
+  requestAnimationFrame(() => {
+    const row = els.historyList?.querySelector(`[data-history-row-id="${CSS.escape(target)}"]`);
+    row?.scrollIntoView({ block: "center" });
+  });
 });
 
 els.historyHidePending?.addEventListener("change", () => {
