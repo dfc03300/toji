@@ -246,8 +246,8 @@ def strip_excel_repair_triggers(wb):
             sheet.legacy_drawing = None
 
 
-def freeze_external_formulas(wb, wb_values):
-    """Replace formulas that point to missing external workbooks with cached values."""
+def freeze_formulas(wb, wb_values):
+    """Replace original workbook formulas with cached values for clean Excel editing."""
     value_sheets = {sheet.title: sheet for sheet in wb_values.worksheets}
     for sheet in wb.worksheets:
         value_sheet = value_sheets.get(sheet.title)
@@ -256,7 +256,7 @@ def freeze_external_formulas(wb, wb_values):
         for row in sheet.iter_rows():
             for cell in row:
                 value = cell.value
-                if isinstance(value, str) and value.startswith("=") and ("[" in value or "]" in value):
+                if isinstance(value, str) and value.startswith("="):
                     cell.value = value_sheet[cell.coordinate].value
 
 
@@ -268,7 +268,7 @@ def build(input_path, output_path, summary_path):
     src_values = wb_values.worksheets[0]
     wb = openpyxl.load_workbook(input_path)
     strip_excel_repair_triggers(wb)
-    freeze_external_formulas(wb, wb_values)
+    freeze_formulas(wb, wb_values)
     if "자동정리" in wb.sheetnames:
         del wb["자동정리"]
     ws = wb.create_sheet("자동정리")
