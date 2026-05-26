@@ -7,6 +7,7 @@ const os = require("node:os");
 const { spawn } = require("node:child_process");
 
 const PORT = Number(process.env.PORT || 5180);
+const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, "public");
 const UPLOADS = path.join(ROOT, "uploads");
@@ -230,6 +231,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`http://127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`http://${HOST}:${PORT}`);
 });
