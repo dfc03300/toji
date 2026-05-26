@@ -128,21 +128,27 @@ def code_lookup(si_gun_gu, dong):
 
     if "sido" not in SIDO_CACHE:
         SIDO_CACHE["sido"] = get_list("/notice/m/bjd/getSido.do", {"notice_year": ""})
-    sido = next((x for x in SIDO_CACHE["sido"] if x.get("NAME") == sido_name), None)
+    def find_name(items, name):
+        exact = next((x for x in items if x.get("NAME") == name), None)
+        if exact:
+            return exact
+        return next((x for x in items if x.get("NAME", "").startswith(name) or name.startswith(x.get("NAME", "")[:2])), None)
+
+    sido = find_name(SIDO_CACHE["sido"], sido_name)
     if not sido:
         return None
 
     sig_key = sido["CODE"]
     if sig_key not in SIGUNGU_CACHE:
         SIGUNGU_CACHE[sig_key] = get_list("/notice/m/bjd/getSigungu.do", {"notice_year": "", "reg1": sig_key})
-    sigungu = next((x for x in SIGUNGU_CACHE[sig_key] if x.get("NAME") == sigungu_name), None)
+    sigungu = find_name(SIGUNGU_CACHE[sig_key], sigungu_name)
     if not sigungu:
         return None
 
     dong_key = sigungu["CODE"]
     if dong_key not in DONGRI_CACHE:
         DONGRI_CACHE[dong_key] = get_list("/notice/m/bjd/getDongri.do", {"notice_year": "", "reg": dong_key})
-    dongri = next((x for x in DONGRI_CACHE[dong_key] if x.get("NAME") == dong_name), None)
+    dongri = find_name(DONGRI_CACHE[dong_key], dong_name)
     if not dongri:
         return None
 
@@ -187,7 +193,11 @@ def crawl_price(si_gun_gu, dong, jibun, trade_date):
     if not rows:
         return None, "조회결과 없음"
 
-    trade_year = trade_date.year if isinstance(trade_date, datetime) else None
+    if isinstance(trade_date, datetime):
+        trade_year = trade_date.year
+    else:
+        m = re.match(r"(\d{4})", str(trade_date or ""))
+        trade_year = int(m.group(1)) if m else None
     chosen = None
     if trade_year:
         chosen = next((row for row in rows if str(row.get("base_year")) == str(trade_year)), None)
@@ -237,12 +247,33 @@ def crawl_columns(crawled, status):
 def abbreviation(zone):
     text = norm(zone)
     mapping = {
+        # 주거지역
+        "제1종전용주거지역": "1전주",
+        "제2종전용주거지역": "2전주",
         "제1종일반주거지역": "1주",
         "제2종일반주거지역": "2주",
         "제3종일반주거지역": "3주",
         "준주거지역": "준주거",
+        # 상업지역
+        "중심상업지역": "중상",
         "일반상업지역": "상업",
         "근린상업지역": "근상",
+        "유통상업지역": "유통",
+        # 공업지역
+        "전용공업지역": "전공",
+        "일반공업지역": "일공",
+        "준공업지역": "준공",
+        # 녹지지역
+        "보전녹지지역": "보녹",
+        "생산녹지지역": "생녹",
+        "자연녹지지역": "자녹",
+        # 관리지역
+        "보전관리지역": "보관",
+        "생산관리지역": "생관",
+        "계획관리지역": "계관",
+        # 기타
+        "농림지역": "농림",
+        "자연환경보전지역": "자보",
     }
     return mapping.get(text, text)
 
@@ -294,7 +325,7 @@ def classify_review(ws, row):
 
 def copy_widths(src, dst):
     widths = [
-        8, 14, 14, 12, 10, 8, 12, 12, 12, 10, 9, 16, 14, 14, 10, 10, 12, 10,
+        8, 24, 14, 12, 10, 8, 12, 12, 12, 10, 9, 16, 14, 14, 10, 10, 12, 10,
         38,
     ]
     for idx, width in enumerate(widths, start=1):
@@ -462,9 +493,12 @@ def build(input_path, output_path, summary_path):
             except Exception:
                 public_ratio = None
 
+        si_gun_gu_text = norm(d["si_gun_gu"])
+        dong_text = norm(d["dong"])
+        sojaegi = f"{si_gun_gu_text} {dong_text}".strip() if si_gun_gu_text else dong_text
         record = [
             d["source_no"],
-            d["dong"],
+            sojaegi,
             display_jibun(d["jibun"]),
             d["trade_date"],
             d["land_area"],
@@ -520,7 +554,7 @@ def build(input_path, output_path, summary_path):
     summary = {
         "sheetName": "자동정리",
         "caseCount": len(rows),
-        "preview": json.loads(json.dumps(preview[:30], default=str, ensure_ascii=False)),
+        "preview": json.loads(json.dumps(preview[:100], default=str, ensure_ascii=False)),
         "warnings": warnings,
     }
     Path(summary_path).write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")

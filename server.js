@@ -1,4 +1,5 @@
 const http = require("node:http");
+const https = require("node:https");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
@@ -26,7 +27,9 @@ const authStates = new Map();
 const realtyCodeCache = {
   sido: null,
   sigungu: new Map(),
-  dongri: new Map()
+  dongri: new Map(),
+  roadInitial: new Map(),
+  road: new Map()
 };
 
 function sendJson(res, status, payload) {
@@ -96,22 +99,67 @@ async function readJsonResponse(response) {
 }
 
 async function postFormJson(url, params) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-      "X-Requested-With": "XMLHttpRequest",
-      "Cache-Control": "no-cache",
-      "Pragma": "no-cache"
-    },
-    body: new URLSearchParams(params)
-  });
-  const data = await readJsonResponse(response);
-  if (!response.ok) {
-    throw new Error(data.error?.message || data.error || `API 호출 실패: ${response.status}`);
+  const body = new URLSearchParams(params).toString();
+  const headers = {
+    "User-Agent": "Mozilla/5.0",
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "X-Requested-With": "XMLHttpRequest",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache"
+  };
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      cache: "no-store",
+      headers,
+      body
+    });
+    const data = await readJsonResponse(response);
+    if (!response.ok) {
+      throw new Error(data.error?.message || data.error || `API 호출 실패: ${response.status}`);
+    }
+    return data;
+  } catch (error) {
+    const code = String(error?.cause?.code || error?.code || "");
+    const message = String(error?.message || "");
+    if (!url.startsWith("https://www.realtyprice.kr/") || (!code.includes("SELF_SIGNED_CERT") && message !== "fetch failed")) throw error;
+    return postFormJsonWithRelaxedTls(url, body, headers);
   }
-  return data;
+}
+
+function postFormJsonWithRelaxedTls(url, body, headers) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const req = https.request({
+      method: "POST",
+      hostname: parsed.hostname,
+      path: `${parsed.pathname}${parsed.search}`,
+      headers: {
+        ...headers,
+        "Content-Length": Buffer.byteLength(body)
+      },
+      rejectUnauthorized: false
+    }, (res) => {
+      let text = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { text += chunk; });
+      res.on("end", () => {
+        try {
+          const data = JSON.parse(text);
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            reject(new Error(data.error?.message || data.error || `API 호출 실패: ${res.statusCode}`));
+            return;
+          }
+          resolve(data);
+        } catch {
+          reject(new Error(text || `API 응답 파싱 실패: ${res.statusCode}`));
+        }
+      });
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
 }
 
 async function realtyList(path, params) {
@@ -119,34 +167,277 @@ async function realtyList(path, params) {
   return data?.model?.list || [];
 }
 
+function resetRealtyCodeCache() {
+  realtyCodeCache.sido = null;
+  realtyCodeCache.sigungu.clear();
+  realtyCodeCache.dongri.clear();
+  realtyCodeCache.roadInitial.clear();
+  realtyCodeCache.road.clear();
+}
+
+function compactText(value) {
+  return String(value || "").replace(/\s+/g, "").toLowerCase();
+}
+
+function looseName(value) {
+  return compactText(value).replace(/특별시|광역시|특별자치시|특별자치도|자치도|도|시|군|구|읍|면|동|리|로|길/g, "");
+}
+
+function keywordMatchesName(keyword, name) {
+  const q = compactText(keyword);
+  const n = compactText(name);
+  const looseQ = looseName(keyword);
+  const looseN = looseName(name);
+  return q.includes(n) || n.includes(q) || (looseN && looseQ.includes(looseN)) || (looseQ && looseN.includes(looseQ));
+}
+
+function splitKeywordNumber(keyword) {
+  let text = String(keyword || "").trim();
+  let san = "1";
+  const sanMatch = text.match(/(?:^|\s)산\s*(\d+(?:-\d+)?)/);
+  const numMatch = sanMatch || text.match(/(\d+(?:-\d+)?)(?!.*\d)/);
+  let number = numMatch?.[1] || "";
+  if (sanMatch) san = "2";
+  if (numMatch) text = text.slice(0, numMatch.index).trim();
+  const [main = "", sub = "0"] = number.split("-");
+  return {
+    text,
+    number,
+    san,
+    bun1: main.replace(/\D/g, "").padStart(4, "0"),
+    bun2: (sub.replace(/\D/g, "") || "0").padStart(4, "0"),
+    build_bun1: main.replace(/\D/g, ""),
+    build_bun2: (sub.replace(/\D/g, "") || "0").padStart(5, "0")
+  };
+}
+
+function gsiParamsForParcel(sido, sigungu, dongri, parsed) {
+  return {
+    search_detail_gbn: "2",
+    notice_year: "",
+    notice_year_nm: "",
+    sido: sido.CODE,
+    sido_nm: sido.NAME,
+    sigungu: sigungu.CODE,
+    sigungu_nm: sigungu.NAME,
+    road_reg: sigungu.CODE,
+    road_initial: "",
+    road_initial_nm: "",
+    road_code: "",
+    road_code_nm: "",
+    dongri: dongri.CODE,
+    dongri_nm: dongri.NAME,
+    reg: sigungu.CODE,
+    eub: dongri.CODE,
+    san: parsed.san,
+    bun1: parsed.bun1,
+    bun2: parsed.bun2,
+    build_bun1: "",
+    build_bun2: "00000"
+  };
+}
+
+function gsiParamsForRoad(sido, sigungu, initial, road, parsed) {
+  return {
+    search_detail_gbn: "1",
+    notice_year: "",
+    notice_year_nm: "",
+    sido: sido.CODE,
+    sido_nm: sido.NAME,
+    sigungu: sigungu.CODE,
+    sigungu_nm: sigungu.NAME,
+    road_reg: sigungu.CODE,
+    road_initial: initial.CODE,
+    road_initial_nm: initial.NAME,
+    road_code: road.ROAD_CODE,
+    road_code_nm: road.NAME,
+    dongri: "",
+    dongri_nm: "",
+    reg: sigungu.CODE,
+    eub: "",
+    san: "1",
+    bun1: "0000",
+    bun2: "0000",
+    build_bun1: parsed.build_bun1,
+    build_bun2: parsed.build_bun2 || "00000"
+  };
+}
+
+function formatParcelSuggestionLabel(row, sido, sigungu, dongri, parsed) {
+  const addr = row?.addr || `${sido.NAME} ${sigungu.NAME} ${dongri.NAME}`;
+  const jibun = row?.jibun || `${parsed.san === "2" ? "산 " : ""}${parsed.number}`;
+  const normalizedAddr = compactText(addr).replace(/번지/g, "");
+  const normalizedJibun = compactText(jibun).replace(/번지/g, "");
+  if (normalizedJibun && normalizedAddr.includes(normalizedJibun)) return addr;
+  return `${addr} ${jibun}`.trim();
+}
+
+async function getSidoList() {
+  if (!realtyCodeCache.sido) {
+    realtyCodeCache.sido = await realtyList("/notice/m/bjd/getSido.do", { notice_year: "" });
+  }
+  return realtyCodeCache.sido;
+}
+
+async function getSigunguList(sidoCode) {
+  if (!realtyCodeCache.sigungu.has(sidoCode)) {
+    realtyCodeCache.sigungu.set(
+      sidoCode,
+      await realtyList("/notice/m/bjd/getSigungu.do", { notice_year: "", reg1: sidoCode })
+    );
+  }
+  return realtyCodeCache.sigungu.get(sidoCode);
+}
+
+async function getDongriList(sigunguCode) {
+  if (!realtyCodeCache.dongri.has(sigunguCode)) {
+    realtyCodeCache.dongri.set(
+      sigunguCode,
+      await realtyList("/notice/m/bjd/getDongri.do", { notice_year: "", reg: sigunguCode })
+    );
+  }
+  return realtyCodeCache.dongri.get(sigunguCode);
+}
+
+async function getRoadInitialList(sigunguCode) {
+  if (!realtyCodeCache.roadInitial.has(sigunguCode)) {
+    realtyCodeCache.roadInitial.set(
+      sigunguCode,
+      await realtyList("/notice/m/road/getRoadInitial.do", { reg: sigunguCode })
+    );
+  }
+  return realtyCodeCache.roadInitial.get(sigunguCode);
+}
+
+async function getRoadList(sigunguCode, initialCode) {
+  const key = `${sigunguCode}:${initialCode}`;
+  if (!realtyCodeCache.road.has(key)) {
+    realtyCodeCache.road.set(
+      key,
+      await realtyList("/notice/m/road/getRoad.do", { reg: sigunguCode, road_initial: initialCode })
+    );
+  }
+  return realtyCodeCache.road.get(key);
+}
+
+async function candidateRegions(keyword) {
+  const q = compactText(keyword);
+  const parsed = splitKeywordNumber(keyword);
+  const hasRegionText = compactText(parsed.text).length >= 2;
+  const sidos = await getSidoList();
+  const sidoMatches = sidos.filter((sido) => keywordMatchesName(q, sido.NAME)).slice(0, 3);
+  const selectedSidos = sidoMatches.length ? sidoMatches : sidos;
+  const regions = [];
+  for (const sido of selectedSidos) {
+    const sigungus = await getSigunguList(sido.CODE);
+    const sigunguMatches = sigungus.filter((sigungu) => keywordMatchesName(q, sigungu.NAME)).slice(0, 12);
+    const orderedSigungus = [...(sigunguMatches.length ? sigunguMatches : (hasRegionText ? sigungus.slice(0, 10) : sigungus))];
+    for (const sigungu of orderedSigungus) {
+      regions.push({ sido, sigungu });
+      if (regions.length >= (hasRegionText ? 24 : 260)) return regions;
+    }
+  }
+  return regions;
+}
+
+async function suggestParcel(keyword) {
+  const parsed = splitKeywordNumber(keyword);
+  const q = compactText(parsed.text || keyword);
+  const hasNumber = Boolean(parsed.number && parsed.bun1 !== "0000");
+  const hasRegionText = compactText(parsed.text).length >= 2;
+  if (hasNumber && !hasRegionText) {
+    return [];
+  }
+  const suggestions = [];
+  const candidates = [];
+  for (const { sido, sigungu } of await candidateRegions(keyword)) {
+    const dongris = await getDongriList(sigungu.CODE);
+    const matches = dongris.filter((dongri) => {
+      return keywordMatchesName(q, dongri.NAME) || keywordMatchesName(q, sigungu.NAME);
+    }).slice(0, 12);
+    for (const dongri of (matches.length ? matches : (hasRegionText ? dongris.slice(0, 5) : dongris))) {
+      candidates.push({ sido, sigungu, dongri });
+    }
+  }
+
+  if (hasNumber) {
+    const batchSize = 12;
+    for (let i = 0; i < candidates.length; i += batchSize) {
+      const batch = candidates.slice(i, i + batchSize);
+      const checked = await Promise.all(batch.map(async ({ sido, sigungu, dongri }) => {
+        const params = gsiParamsForParcel(sido, sigungu, dongri, parsed);
+        const rows = await realtyList("/notice/m/gsi/getList.do", params);
+        if (!rows.length) return null;
+        return {
+          mode: "parcel",
+          label: formatParcelSuggestionLabel(rows[0], sido, sigungu, dongri, parsed),
+          detail: `${rows.length}건 · 캐시 미사용 실시간 확인`,
+          params
+        };
+      }));
+      suggestions.push(...checked.filter(Boolean));
+      if (suggestions.length >= 12) return suggestions.slice(0, 12);
+    }
+    return suggestions.slice(0, 12);
+  }
+
+  for (const { sido, sigungu, dongri } of candidates.slice(0, 12)) {
+    suggestions.push({
+        mode: "parcel",
+        label: `${sido.NAME} ${sigungu.NAME} ${dongri.NAME}${parsed.number ? ` ${parsed.san === "2" ? "산 " : ""}${parsed.number}` : ""}`,
+        detail: "행정동 후보",
+        params: gsiParamsForParcel(sido, sigungu, dongri, parsed)
+    });
+  }
+  return suggestions;
+}
+
+async function suggestRoad(keyword) {
+  const parsed = splitKeywordNumber(keyword);
+  const q = compactText(parsed.text || keyword);
+  const suggestions = [];
+  for (const { sido, sigungu } of await candidateRegions(keyword)) {
+    const initials = await getRoadInitialList(sigungu.CODE);
+    for (const initial of initials) {
+      const roads = await getRoadList(sigungu.CODE, initial.CODE);
+      const matches = roads.filter((road) => {
+        return keywordMatchesName(q, road.NAME);
+      }).slice(0, 6);
+      for (const road of matches) {
+        const params = gsiParamsForRoad(sido, sigungu, initial, road, parsed);
+        if (parsed.build_bun1) {
+          const rows = await realtyList("/notice/m/gsi/getList.do", params);
+          if (!rows.length) continue;
+        }
+        suggestions.push({
+          mode: "road",
+          label: `${sido.NAME} ${sigungu.NAME} ${road.NAME}${parsed.number ? ` ${parsed.number}` : ""}`,
+          detail: parsed.build_bun1 ? "캐시 미사용 실시간 확인" : "도로명 후보",
+          params
+        });
+        if (suggestions.length >= 12) return suggestions;
+      }
+    }
+  }
+  return suggestions;
+}
+
 async function enrichGsiParams(params) {
   const enriched = { ...params };
+  if (enriched.search_detail_gbn === "1" && enriched.sido && enriched.sigungu && enriched.road_reg && enriched.road_code) {
+    return enriched;
+  }
   if (enriched.sido && enriched.sigungu && enriched.dongri && enriched.reg && enriched.eub) {
     return enriched;
   }
 
-  if (!realtyCodeCache.sido) {
-    realtyCodeCache.sido = await realtyList("/notice/m/bjd/getSido.do", { notice_year: "" });
-  }
-  const sido = realtyCodeCache.sido.find((row) => row.NAME === enriched.sido_nm);
+  const sido = (await getSidoList()).find((row) => row.NAME === enriched.sido_nm);
   if (!sido) throw new Error(`시도 코드를 찾지 못했습니다: ${enriched.sido_nm || ""}`);
 
-  if (!realtyCodeCache.sigungu.has(sido.CODE)) {
-    realtyCodeCache.sigungu.set(
-      sido.CODE,
-      await realtyList("/notice/m/bjd/getSigungu.do", { notice_year: "", reg1: sido.CODE })
-    );
-  }
-  const sigungu = realtyCodeCache.sigungu.get(sido.CODE).find((row) => row.NAME === enriched.sigungu_nm);
+  const sigungu = (await getSigunguList(sido.CODE)).find((row) => row.NAME === enriched.sigungu_nm);
   if (!sigungu) throw new Error(`시군구 코드를 찾지 못했습니다: ${enriched.sigungu_nm || ""}`);
 
-  if (!realtyCodeCache.dongri.has(sigungu.CODE)) {
-    realtyCodeCache.dongri.set(
-      sigungu.CODE,
-      await realtyList("/notice/m/bjd/getDongri.do", { notice_year: "", reg: sigungu.CODE })
-    );
-  }
-  const dongri = realtyCodeCache.dongri.get(sigungu.CODE).find((row) => row.NAME === enriched.dongri_nm);
+  const dongri = (await getDongriList(sigungu.CODE)).find((row) => row.NAME === enriched.dongri_nm);
   if (!dongri) throw new Error(`읍면동 코드를 찾지 못했습니다: ${enriched.dongri_nm || ""}`);
 
   return {
@@ -329,13 +620,11 @@ async function handleJob(req, res, id) {
 async function download(req, res, id) {
   const job = jobs.get(id);
   if (!job || job.status !== "done") {
-    res.writeHead(404);
-    res.end("Not found");
+    sendJson(res, 404, { error: "다운로드할 완료 파일을 찾지 못했습니다. 서버가 재시작된 경우 다시 분석해 주세요." });
     return;
   }
   if (job.expiresAt && Date.now() > Date.parse(job.expiresAt)) {
-    res.writeHead(410);
-    res.end("Download expired");
+    sendJson(res, 410, { error: "다운로드 가능 기간이 만료되었습니다. 다시 분석해 주세요." });
     return;
   }
   res.writeHead(200, {
@@ -476,6 +765,40 @@ async function microsoftCallback(req, res, url) {
   }
 }
 
+async function patchCells(req, res, id) {
+  const job = jobs.get(id);
+  if (!job || job.status !== "done") {
+    return sendJson(res, 404, { error: "완료된 작업을 찾지 못했습니다." });
+  }
+  let patches;
+  try {
+    const body = await readBody(req);
+    patches = JSON.parse(body.toString("utf8")).patches;
+    if (!Array.isArray(patches)) throw new Error("patches 배열이 필요합니다.");
+  } catch (err) {
+    return sendJson(res, 400, { error: err.message });
+  }
+  return new Promise((resolve) => {
+    const child = spawn(PYTHON, [path.join(ROOT, "patcher.py"), job.output], {
+      cwd: ROOT,
+      env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    let stderr = "";
+    child.stdin.write(JSON.stringify(patches), "utf8");
+    child.stdin.end();
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+    child.on("close", (code) => {
+      if (code !== 0) {
+        sendJson(res, 500, { error: stderr.trim() || "셀 저장에 실패했습니다." });
+      } else {
+        sendJson(res, 200, { ok: true, downloadUrl: `/api/download/${id}` });
+      }
+      resolve();
+    });
+  });
+}
+
 async function verifyGsi(req, res, url) {
   const params = Object.fromEntries(url.searchParams.entries());
   const fetchedAt = new Date().toISOString();
@@ -486,7 +809,7 @@ async function verifyGsi(req, res, url) {
       source: "realtyprice.kr",
       freshness: "real-time",
       fetchedAt,
-      notice: "캐시를 사용하지 않고 realtyprice.kr API에서 실시간으로 조회한 값입니다.",
+      notice: "캐시를 사용하지 않고 realtyprice.kr API에서 실시간 조회만 사용한 값입니다.",
       method: "POST",
       endpoint: "https://www.realtyprice.kr/notice/m/gsi/getList.do",
       searchPage: "https://www.realtyprice.kr/notice/m/gsi/search.do",
@@ -507,6 +830,31 @@ async function verifyGsi(req, res, url) {
   }
 }
 
+async function suggestGsi(req, res, url) {
+  const mode = url.searchParams.get("mode") === "road" ? "road" : "parcel";
+  const keyword = url.searchParams.get("q") || "";
+  const fetchedAt = new Date().toISOString();
+  if (keyword.trim().length < 2) {
+    sendJson(res, 200, { mode, keyword, freshness: "real-time", fetchedAt, suggestions: [] });
+    return;
+  }
+  try {
+    const suggestions = mode === "road"
+      ? await suggestRoad(keyword)
+      : await suggestParcel(keyword);
+    sendJson(res, 200, {
+      mode,
+      keyword,
+      freshness: "real-time-api-verified",
+      fetchedAt,
+      endpoint: "https://www.realtyprice.kr/notice/m/gsi/getList.do",
+      suggestions
+    });
+  } catch (error) {
+    sendJson(res, 502, { mode, keyword, freshness: "real-time", fetchedAt, error: error.message, suggestions: [] });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -521,6 +869,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname.startsWith("/api/open-folder/")) return openOutputFolder(req, res, url.pathname.split("/").pop());
     if (req.method === "GET" && url.pathname === "/api/m365/status") return m365Status(req, res);
     if (req.method === "GET" && url.pathname.startsWith("/api/m365/start/")) return m365Start(req, res, url.pathname.split("/").pop());
+    if (req.method === "POST" && url.pathname.startsWith("/api/patch-cells/")) return patchCells(req, res, url.pathname.split("/").pop());
+    if (req.method === "GET" && url.pathname === "/api/realtyprice/gsi/suggest") return suggestGsi(req, res, url);
     if (req.method === "GET" && url.pathname === "/api/realtyprice/gsi") return verifyGsi(req, res, url);
     if (req.method === "GET" && url.pathname === "/auth/microsoft/callback") return microsoftCallback(req, res, url);
     return serveStatic(req, res);

@@ -57,9 +57,13 @@ const els = {
   previewHead: document.querySelector("#previewHead"),
   previewBody: document.querySelector("#previewBody"),
   gsiPopupBtn: document.querySelector("#gsiPopupBtn"),
+  saveCellsBtn: document.querySelector("#saveCellsBtn"),
   gsiDialog: document.querySelector("#gsiDialog"),
   gsiDialogClose: document.querySelector("#gsiDialogClose"),
   gsiSearchForm: document.querySelector("#gsiSearchForm"),
+  gsiKeyword: document.querySelector("#gsiKeyword"),
+  gsiSuggestList: document.querySelector("#gsiSuggestList"),
+  gsiSelectedAddress: document.querySelector("#gsiSelectedAddress"),
   gsiSearchStatus: document.querySelector("#gsiSearchStatus"),
   gsiResultHead: document.querySelector("#gsiResultHead"),
   gsiResultBody: document.querySelector("#gsiResultBody"),
@@ -89,6 +93,8 @@ const els = {
 };
 
 const historyPageSize = 10;
+let gsiSuggestTimer = null;
+let selectedGsiSuggestion = null;
 
 function nowTime() {
   return new Intl.DateTimeFormat("ko-KR", {
@@ -220,6 +226,29 @@ function downloadBlob(name, blob) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function filenameFromDisposition(value) {
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(value || "")?.[1];
+  if (encoded) return decodeURIComponent(encoded);
+  return /filename="?([^"]+)"?/i.exec(value || "")?.[1] || "TojiWorks.xlsx";
+}
+
+async function downloadResultFile(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    let message = "다운로드 실패";
+    try {
+      const data = await response.json();
+      message = data.error || message;
+    } catch {
+      message = await response.text() || message;
+    }
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  const fileName = filenameFromDisposition(response.headers.get("Content-Disposition"));
+  downloadBlob(fileName, blob);
+}
+
 function parseHistoryTime(item) {
   if (Number.isFinite(item.createdAtMs)) return item.createdAtMs;
   const idTime = String(item.jobId || "").match(/(?:pending|queued)-(\d+)/)?.[1];
@@ -262,7 +291,7 @@ function renderHistory() {
       ? `<span class="history-muted">-</span>`
       : expired
       ? `<span class="history-expired">만료됨</span>`
-      : `<a href="${item.downloadUrl}" download>다운로드</a>`;
+      : `<button class="history-link" type="button" data-download-url="${escapeHtml(item.downloadUrl)}">다운로드</button>`;
     const expiresAt = item.expiresAt ? item.expiresAt.slice(0, 10) : "";
     const isDone = Boolean(item.downloadUrl);
     const statusCell = isDone
@@ -330,7 +359,7 @@ async function chooseFile(file) {
   els.processBtn.classList.remove("complete");
   setText(els.processBtn, "파일 분석");
   setServerStatus("파일 선택");
-  addLog(`Selected file: ${file.name} (${formatBytes(file.size)})`);
+  addLog(`파일 선택: ${file.name} (${formatBytes(file.size)})`);
   state.pendingHistoryId = await addOriginalHistory(file, "pending");
 }
 
@@ -354,13 +383,13 @@ function valueText(value) {
 
 function isCrawledCell(header, row) {
   if (header === "크롤링상태") return Boolean(row[header]) && !String(row[header]).startsWith("원본");
-  if (header === "개별공시지가") return /^조회완료/.test(String(row["크롤링상태"] || ""));
+  if (header === "개별공시지가") return /조회완료/.test(String(row["크롤링상태"] || ""));
   return false;
 }
 
 function renderPreview(rows) {
   renderHead();
-  setText(els.rowCount, `${rows?.length || 0} rows`);
+  setText(els.rowCount, `${rows?.length || 0}건`);
   if (!rows?.length) {
     els.previewBody.innerHTML = `<tr><td class="row-head">1</td><td class="empty" colspan="${headers.length}">업로드 후 결과 미리보기가 표시됩니다.</td></tr>`;
     return;
@@ -396,20 +425,59 @@ function splitSearchJibun(value) {
 
 function gsiParamsFromForm() {
   const data = new FormData(els.gsiSearchForm);
-  const jibun = splitSearchJibun(data.get("jibun"));
+  if (!selectedGsiSuggestion?.params) {
+    throw new Error("자동완성 후보에서 주소를 먼저 선택해 주세요.");
+  }
   return {
-    search_detail_gbn: "2",
+    ...selectedGsiSuggestion.params,
     notice_year: data.get("notice_year") || "",
     notice_year_nm: "",
-    sido_nm: data.get("sido_nm") || "",
-    sigungu_nm: data.get("sigungu_nm") || "",
-    dongri_nm: data.get("dongri_nm") || "",
-    san: jibun.san,
-    bun1: jibun.bun1,
-    bun2: jibun.bun2,
-    build_bun1: "",
-    build_bun2: "00000",
   };
+}
+
+function gsiSearchMode() {
+  return new FormData(els.gsiSearchForm).get("gsiSearchMode") || "parcel";
+}
+
+function renderSuggestions(items) {
+  if (!items.length) {
+    els.gsiSuggestList.innerHTML = `<div class="suggest-empty">실시간 API에서 일치하는 주소가 없습니다. 정확한 검증을 위해 시군구나 동 이름을 함께 입력해 주세요.</div>`;
+    els.gsiSuggestList.classList.remove("hidden");
+    return;
+  }
+  els.gsiSuggestList.innerHTML = items.map((item, index) => `
+    <button type="button" data-suggest-index="${index}">
+      <strong>${escapeHtml(item.label)}</strong>
+      <span>${escapeHtml(item.detail || (item.mode === "road" ? "도로명" : "지번"))}</span>
+    </button>
+  `).join("");
+  els.gsiSuggestList._items = items;
+  els.gsiSuggestList.classList.remove("hidden");
+}
+
+async function fetchGsiSuggestions() {
+  const keyword = els.gsiKeyword.value.trim();
+  selectedGsiSuggestion = null;
+  setText(els.gsiSelectedAddress, "주소 후보를 선택해 주세요.");
+  if (keyword.length < 2) {
+    els.gsiSuggestList.classList.add("hidden");
+    return;
+  }
+  setText(els.gsiSelectedAddress, "캐시 미사용 · realtyprice.kr API에서 실시간 주소 후보를 확인 중입니다.");
+  const params = new URLSearchParams({ mode: gsiSearchMode(), q: keyword });
+  const response = await fetch(`/api/realtyprice/gsi/suggest?${params.toString()}`, { cache: "no-store" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "주소 후보 조회 실패");
+  renderSuggestions(data.suggestions || []);
+}
+
+function formatGsiCell(key, value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (key === "gakuka_w") {
+    const num = Number(String(value).replace(/,/g, ""));
+    if (!isNaN(num) && num > 0) return num.toLocaleString("ko-KR") + " 원/㎡";
+  }
+  return escapeHtml(String(value));
 }
 
 function renderGsiRows(rows) {
@@ -418,11 +486,19 @@ function renderGsiRows(rows) {
     els.gsiResultBody.innerHTML = `<tr><td class="empty">조회 결과가 없습니다.</td></tr>`;
     return;
   }
-  const preferred = ["pnu", "sido_nm", "sigungu_nm", "dongri_nm", "jibun", "stdmt", "pblntf_pclnd", "notice_year"];
-  const keys = [...preferred.filter((key) => rows.some((row) => key in row)), ...Object.keys(rows[0]).filter((key) => !preferred.includes(key))];
-  els.gsiResultHead.innerHTML = `<tr>${keys.map((key) => `<th>${escapeHtml(key)}</th>`).join("")}</tr>`;
+  const columns = [
+    ["base_year", "기준연도"],
+    ["addr", "소재지"],
+    ["jibun", "지번"],
+    ["base_md", "기준일자"],
+    ["notice_ymd", "공시일자"],
+    ["gakuka_w", "개별공시지가"],
+    ["etc_cntn", "비고"],
+  ].filter(([key]) => rows.some((row) => key in row));
+  const keys = columns.length ? columns : Object.keys(rows[0]).map((key) => [key, key]);
+  els.gsiResultHead.innerHTML = `<tr>${keys.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("")}</tr>`;
   els.gsiResultBody.innerHTML = rows.map((row) => `
-    <tr>${keys.map((key) => `<td>${escapeHtml(row[key])}</td>`).join("")}</tr>
+    <tr>${keys.map(([key]) => `<td>${formatGsiCell(key, row[key])}</td>`).join("")}</tr>
   `).join("");
 }
 
@@ -438,7 +514,7 @@ async function searchGsi() {
     return;
   }
   const fetchedAt = data.fetchedAt ? new Date(data.fetchedAt).toLocaleString("ko-KR") : "방금";
-  setText(els.gsiSearchStatus, `실시간 최신 조회 완료: ${data.rows.length}건 · ${fetchedAt}`);
+  setText(els.gsiSearchStatus, `캐시 미사용 · 실시간 최신 조회 완료: ${data.rows.length}건 · ${fetchedAt}`);
   renderGsiRows(data.rows || []);
 }
 
@@ -470,10 +546,17 @@ async function poll(jobId) {
     els.downloadBtn.classList.add("complete");
     setText(els.downloadBtn, "엑셀 다운로드 가능");
     state.currentJobId = job.id;
+    if (els.saveCellsBtn) els.saveCellsBtn.disabled = false;
     setText(els.summaryText, `${job.caseCount || 0}건을 자동정리 탭에 작성했습니다.`);
     setText(els.sheetName, job.sheetName || "자동정리");
-    addLog(`Completed: ${job.caseCount || 0} rows written to ${job.sheetName || "자동정리"}`, "success");
+    addLog(`완료: ${job.caseCount || 0}건을 ${job.sheetName || "자동정리"} 탭에 기록했습니다.`, "success");
     addLog(`저장 폴더: ${job.savedFolder || "저장 위치를 확인하지 못했습니다."}`, job.savedFolder ? "success" : "error");
+    if (job.warnings?.length) {
+      job.warnings.forEach((warning) => {
+        state.lastProgress = "";
+        addLog(`공시지가 조회 실패: ${warning}`, "error");
+      });
+    }
     const existingHistory = getHistory().find((entry) => entry.jobId === state.pendingHistoryId);
     upsertHistory({
       jobId: state.pendingHistoryId || job.id,
@@ -494,6 +577,7 @@ async function poll(jobId) {
     });
     state.pendingHistoryId = null;
     renderPreview(job.preview);
+    setText(els.rowCount, `${job.caseCount || job.preview?.length || 0}건`);
     els.processBtn.disabled = false;
     els.processBtn.classList.add("complete");
     setText(els.processBtn, "분석 완료");
@@ -512,7 +596,7 @@ async function startProcess() {
   els.downloadBtn.href = "#";
   setServerStatus("처리 중");
   setStep(0);
-  addLog("Uploading workbook...");
+  addLog("엑셀 파일을 서버로 전송하는 중입니다...");
 
   const form = new FormData();
   form.append("file", state.file);
@@ -523,7 +607,7 @@ async function startProcess() {
     setServerStatus("오류");
     throw new Error(data.error || "업로드 실패");
   }
-  addLog(`Job accepted: ${data.jobId}`);
+  addLog(`작업이 접수되었습니다. (${data.jobId})`);
   state.timer = setInterval(() => poll(data.jobId).catch((error) => {
     clearInterval(state.timer);
     setServerStatus("오류");
@@ -531,6 +615,43 @@ async function startProcess() {
     els.processBtn.disabled = false;
   }), 1200);
   await poll(data.jobId);
+}
+
+async function saveCells() {
+  if (!state.currentJobId) {
+    addLog("먼저 파일 분석을 완료해야 합니다.", "error");
+    return;
+  }
+  const patches = [];
+  els.previewBody.querySelectorAll("tr").forEach((tr, rowIndex) => {
+    const excelRow = rowIndex + 3;
+    tr.querySelectorAll("td[data-col]").forEach((td) => {
+      const colIndex = Number(td.dataset.col);
+      if (colIndex !== COL_TIME_RATE && colIndex !== COL_TIME_ADJ) return;
+      const value = td.textContent.trim();
+      if (!value) return;
+      patches.push({ row: excelRow, col: colIndex + 1, value });
+    });
+  });
+  if (!patches.length) {
+    addLog("저장할 값이 없습니다. 시점수정치 열에 값을 입력해 주세요.", "error");
+    return;
+  }
+  setText(els.saveCellsBtn, "저장 중...");
+  els.saveCellsBtn.disabled = true;
+  try {
+    const response = await fetch(`/api/patch-cells/${state.currentJobId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ patches }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "저장 실패");
+    addLog(`시점수정 ${patches.length}개 셀을 엑셀에 반영했습니다.`, "success");
+  } finally {
+    setText(els.saveCellsBtn, "시점수정 저장");
+    els.saveCellsBtn.disabled = false;
+  }
 }
 
 async function runHistoryAnalysis(historyId) {
@@ -576,6 +697,17 @@ els.processBtn.addEventListener("click", () => startProcess().catch((error) => {
   els.processBtn.disabled = false;
 }));
 
+els.downloadBtn.addEventListener("click", (event) => {
+  event.preventDefault();
+  if (els.downloadBtn.classList.contains("disabled") || !els.downloadBtn.getAttribute("href") || els.downloadBtn.getAttribute("href") === "#") {
+    addLog("아직 다운로드할 완료 파일이 없습니다.", "error");
+    return;
+  }
+  downloadResultFile(els.downloadBtn.getAttribute("href")).catch((error) => addLog(error.message, "error"));
+});
+
+els.saveCellsBtn?.addEventListener("click", () => saveCells().catch((error) => addLog(error.message, "error")));
+
 els.gsiPopupBtn.addEventListener("click", () => {
   if (typeof els.gsiDialog.showModal === "function") {
     els.gsiDialog.showModal();
@@ -586,6 +718,77 @@ els.gsiPopupBtn.addEventListener("click", () => {
 
 els.gsiDialogClose.addEventListener("click", () => {
   els.gsiDialog.close();
+});
+
+els.gsiKeyword.addEventListener("keydown", (event) => {
+  if (els.gsiSuggestList.classList.contains("hidden")) return;
+  const buttons = [...els.gsiSuggestList.querySelectorAll("button")];
+  if (!buttons.length) return;
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    buttons[0].focus();
+  } else if (event.key === "Escape") {
+    els.gsiSuggestList.classList.add("hidden");
+  }
+});
+
+els.gsiSuggestList.addEventListener("keydown", (event) => {
+  const buttons = [...els.gsiSuggestList.querySelectorAll("button")];
+  const idx = buttons.indexOf(document.activeElement);
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    buttons[(idx + 1) % buttons.length]?.focus();
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    if (idx <= 0) {
+      els.gsiKeyword.focus();
+    } else {
+      buttons[idx - 1].focus();
+    }
+  } else if (event.key === "Escape") {
+    els.gsiSuggestList.classList.add("hidden");
+    els.gsiKeyword.focus();
+  }
+});
+
+els.gsiKeyword.addEventListener("input", () => {
+  clearTimeout(gsiSuggestTimer);
+  gsiSuggestTimer = setTimeout(() => {
+    fetchGsiSuggestions().catch((error) => {
+      els.gsiSuggestList.innerHTML = `<div class="suggest-empty">${escapeHtml(error.message)}</div>`;
+      els.gsiSuggestList.classList.remove("hidden");
+    });
+  }, 250);
+});
+
+els.gsiSearchForm.querySelectorAll("input[name='gsiSearchMode']").forEach((input) => {
+  input.addEventListener("change", () => {
+    selectedGsiSuggestion = null;
+    setText(els.gsiSelectedAddress, "주소 후보를 선택해 주세요.");
+    fetchGsiSuggestions().catch((error) => {
+      els.gsiSuggestList.innerHTML = `<div class="suggest-empty">${escapeHtml(error.message)}</div>`;
+      els.gsiSuggestList.classList.remove("hidden");
+    });
+  });
+});
+
+els.gsiSuggestList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-suggest-index]");
+  if (!button) return;
+  const item = els.gsiSuggestList._items?.[Number(button.dataset.suggestIndex)];
+  if (!item) return;
+  selectedGsiSuggestion = item;
+  els.gsiKeyword.value = item.label;
+  setText(els.gsiSelectedAddress, `선택: ${item.label}`);
+  els.gsiSuggestList.classList.add("hidden");
+});
+
+document.addEventListener("click", (event) => {
+  if (!els.gsiSuggestList.classList.contains("hidden") &&
+      !els.gsiSuggestList.contains(event.target) &&
+      event.target !== els.gsiKeyword) {
+    els.gsiSuggestList.classList.add("hidden");
+  }
 });
 
 els.gsiSearchForm.addEventListener("submit", (event) => {
@@ -637,6 +840,11 @@ els.historyList.addEventListener("click", async (event) => {
   const runButton = event.target.closest("[data-run-history-id]");
   if (runButton) {
     runHistoryAnalysis(runButton.dataset.runHistoryId).catch((error) => addLog(error.message, "error"));
+    return;
+  }
+  const downloadButton = event.target.closest("[data-download-url]");
+  if (downloadButton) {
+    downloadResultFile(downloadButton.dataset.downloadUrl).catch((error) => addLog(error.message, "error"));
     return;
   }
   const button = event.target.closest("[data-original-id]");
@@ -777,7 +985,10 @@ els.previewBody.addEventListener("input", (event) => {
   }
 });
 
+const gsiYearInput = els.gsiSearchForm?.querySelector(".gsi-year");
+if (gsiYearInput && !gsiYearInput.value) gsiYearInput.value = new Date().getFullYear();
+
 renderHead();
-addLog("Waiting for workbook upload.");
+addLog("엑셀 파일 업로드를 기다리는 중입니다.");
 renderRequests();
 renderHistory();

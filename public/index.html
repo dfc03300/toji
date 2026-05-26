@@ -23,17 +23,32 @@
         </label>
 
         <button class="text-button primary" id="processBtn" disabled>파일 분석</button>
+
+        <dl class="meta-list">
+          <div>
+            <dt>상태</dt>
+            <dd id="serverStatus">대기 중</dd>
+          </div>
+          <div>
+            <dt>단계</dt>
+            <dd id="steps">
+              <span>업로드</span> · <span>분석</span> · <span>조회</span> · <span>저장</span>
+            </dd>
+          </div>
+          <div>
+            <dt>시트</dt>
+            <dd id="sheetName">자동정리</dd>
+          </div>
+          <div>
+            <dt>결과</dt>
+            <dd id="summaryText">-</dd>
+          </div>
+        </dl>
+
         <a class="text-button disabled" id="downloadBtn" href="#" download>엑셀 다운로드</a>
 
         <div class="secondary-actions">
-          <button class="icon-button office-button" type="button" id="officeBtn" aria-label="Office 365에서 편집" title="Office 365에서 편집">
-            <svg class="office365-icon" viewBox="0 0 32 32" aria-hidden="true">
-              <path fill="#f25022" d="M15.6 2.5 27 6.9v18.2l-11.4 4.4L5 25.8V6.2l10.6-3.7Z" />
-              <path fill="#ffb900" d="M15.6 6.1 23.4 9v14l-7.8 2.9-7-2.3V8.4l7-2.3Z" />
-              <path fill="#7fba00" d="M15.6 9.4 20 11v10l-4.4 1.6-3.8-1.2v-11l3.8-1Z" />
-              <path fill="#00a4ef" d="M15.6 12.2 17.9 13v6l-2.3.8-2-.6v-6.4l2-.6Z" />
-            </svg>
-          </button>
+          <button class="text-button muted" type="button" id="officeBtn">Office365 편집</button>
           <button class="text-button muted" type="button" id="devViewBtn">개발 요청</button>
           <button class="text-button muted" type="button" id="historyViewBtn">작업 히스토리</button>
         </div>
@@ -49,9 +64,10 @@
 
         <section class="data-area">
           <div class="section-header">
-            <strong>데이터 미리보기</strong>
+            <span class="section-title"><strong>데이터 미리보기</strong> <span id="rowCount" class="row-count"></span></span>
             <div class="header-actions">
               <button class="plain-button" type="button" id="gsiPopupBtn">공시지가 비교 검색</button>
+              <button class="plain-button" type="button" id="saveCellsBtn" disabled>시점수정 저장</button>
               <span class="legend"><b>붉은색 텍스트</b> = API로 가져온 정보</span>
             </div>
           </div>
@@ -70,65 +86,44 @@
         </section>
       </section>
 
-      <dialog class="compare-dialog" id="gsiDialog">
-        <div class="dialog-head">
-          <strong>개별공시지가 비교 검색</strong>
-          <button class="plain-button" type="button" id="gsiDialogClose">닫기</button>
+      <dialog class="gsi-dialog" id="gsiDialog">
+        <div class="gsi-dialog-head">
+          <strong>개별공시지가 조회</strong>
+          <div class="gsi-head-actions">
+            <a class="plain-button" href="https://www.realtyprice.kr/notice/m/gsi/search.do" target="_blank" rel="noreferrer">공시가격알리미에서 검증 ↗</a>
+            <button class="plain-button" type="button" id="gsiDialogClose">닫기</button>
+          </div>
         </div>
-        <div class="compare-grid">
-          <section class="compare-pane">
-            <div class="pane-head">
-              <strong>원본 페이지</strong>
-              <a href="https://www.realtyprice.kr/notice/m/gsi/search.do" target="_blank" rel="noreferrer">새 창 열기</a>
+        <div class="gsi-dialog-body">
+          <form class="gsi-search-bar" id="gsiSearchForm">
+            <div class="search-mode-tabs" role="radiogroup" aria-label="검색 방식">
+              <label><input type="radio" name="gsiSearchMode" value="parcel" checked /> 지번</label>
+              <label><input type="radio" name="gsiSearchMode" value="road" /> 도로명</label>
             </div>
-            <iframe title="realtyprice.kr 원본 개별공시지가 검색" src="https://www.realtyprice.kr/notice/m/gsi/search.do"></iframe>
-          </section>
-          <section class="compare-pane">
-            <div class="pane-head">
-              <strong>TojiWorks 실시간 조회</strong>
-              <span>캐시 없이 realtyprice.kr API에서 최신값 조회</span>
-            </div>
-            <section class="gsi-search-panel" aria-label="개별공시지가 검색">
-              <form class="gsi-search-form" id="gsiSearchForm">
-                <label>
-                  <span>시도</span>
-                  <input name="sido_nm" placeholder="서울특별시" />
-                </label>
-                <label>
-                  <span>시군구</span>
-                  <input name="sigungu_nm" placeholder="은평구" />
-                </label>
-                <label>
-                  <span>읍면동</span>
-                  <input name="dongri_nm" placeholder="불광동" />
-                </label>
-                <label>
-                  <span>지번</span>
-                  <input name="jibun" placeholder="520 또는 산 205-31" />
-                </label>
-                <label>
-                  <span>기준연도</span>
-                  <input name="notice_year" placeholder="비워두면 전체" />
-                </label>
-                <button type="submit">조회</button>
-              </form>
-              <p class="gsi-source">
-                출처: realtyprice.kr 모바일 개별공시지가 조회 API · 캐시 없이 실시간 최신 조회
-                <span>https://www.realtyprice.kr/notice/m/gsi/getList.do</span>
-              </p>
-              <div class="gsi-result">
-                <div class="gsi-status" id="gsiSearchStatus">조회 대기</div>
-                <div class="viewer compact-viewer">
-                  <table class="sheet-grid gsi-grid">
-                    <thead id="gsiResultHead"></thead>
-                    <tbody id="gsiResultBody">
-                      <tr><td class="empty">주소를 입력하면 조회 결과가 표시됩니다.</td></tr>
-                    </tbody>
-                  </table>
-                </div>
+            <div class="gsi-search-row">
+              <div class="autocomplete-field">
+                <input id="gsiKeyword" autocomplete="off" placeholder="예: 성동 성수동1가 656-938" />
+                <div class="suggest-list hidden" id="gsiSuggestList"></div>
               </div>
-            </section>
-          </section>
+              <input class="gsi-year" name="notice_year" placeholder="연도" />
+              <button type="submit" class="gsi-submit">조회</button>
+            </div>
+          </form>
+          <div class="gsi-addr-row">
+            <span class="gsi-addr-label">선택 주소</span>
+            <span id="gsiSelectedAddress" class="gsi-addr-value">주소 후보를 선택해 주세요.</span>
+            <span class="gsi-divider">·</span>
+            <span id="gsiSearchStatus" class="gsi-status-text">조회 대기</span>
+          </div>
+          <div class="gsi-result-scroll">
+            <table class="sheet-grid gsi-grid">
+              <thead id="gsiResultHead"></thead>
+              <tbody id="gsiResultBody">
+                <tr><td class="empty">주소를 입력하면 조회 결과가 표시됩니다.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="gsi-footer-note">공시지가 데이터는 캐시를 사용하지 않고 realtyprice.kr API에서 실시간 조회만 사용합니다.</p>
         </div>
       </dialog>
 
