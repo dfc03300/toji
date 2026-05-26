@@ -417,6 +417,84 @@ input {
   background: var(--head);
 }
 
+.verify-page {
+  min-height: 100vh;
+  padding: 18px;
+  background: #fff;
+}
+
+.verify-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.verify-header h1 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.verify-header p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.verify-header a {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.verify-section {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.verify-section h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.verify-meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 6px 10px;
+}
+
+.verify-meta div {
+  display: contents;
+}
+
+.verify-meta dt {
+  color: var(--muted);
+}
+
+.verify-meta dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+#verifyParams {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  background: #f9fafb;
+  white-space: pre-wrap;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.verify-viewer {
+  max-height: 520px;
+  border: 1px solid var(--line);
+}
+
+.verify-grid {
+  min-width: 1200px;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;

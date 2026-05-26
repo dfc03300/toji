@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import sys
 import urllib.parse
@@ -41,6 +42,10 @@ CRAWLED_FONT = Font(name="맑은 고딕", size=11, color="C00000")
 SIDO_CACHE = {}
 SIGUNGU_CACHE = {}
 DONGRI_CACHE = {}
+
+
+def public_base_url():
+    return os.environ.get("PUBLIC_BASE_URL", "http://127.0.0.1:5180").rstrip("/")
 
 
 def log(message):
@@ -201,6 +206,7 @@ def crawl_price(si_gun_gu, dong, jibun, trade_date):
         "api_method": "POST",
         "api_endpoint": "https://www.realtyprice.kr/notice/m/gsi/getList.do",
         "request_params": json.dumps(params, ensure_ascii=False, sort_keys=True),
+        "verify_url": f"{public_base_url()}/verify.html?{urllib.parse.urlencode(params)}",
     }, "조회완료"
 
 
@@ -377,6 +383,7 @@ def build(input_path, output_path, summary_path):
         crawl_status = "원본 공시지가 사용"
         crawl_data = crawl_columns(None, crawl_status)
         official_price_from_crawl = False
+        official_price_verified_by_api = False
 
         crawled = None
         if official_price in (None, ""):
@@ -386,6 +393,7 @@ def build(input_path, output_path, summary_path):
                 if crawled and crawled.get("price"):
                     official_price = crawled["price"]
                     official_price_from_crawl = True
+                    official_price_verified_by_api = True
                     crawl_data = crawl_columns(crawled, crawl_status)
             except Exception as exc:
                 crawl_status = f"조회실패: {exc}"
@@ -396,6 +404,7 @@ def build(input_path, output_path, summary_path):
                 log(f"{idx}/{len(rows)} {norm(dong)} {norm(jibun)} 공시지가 검증 조회 중입니다.")
                 crawled, status = crawl_price(si_gun_gu, dong, jibun, trade_date)
                 if crawled and crawled.get("price"):
+                    official_price_verified_by_api = True
                     crawl_data = crawl_columns(crawled, status)
                 else:
                     crawl_status = status
@@ -452,7 +461,11 @@ def build(input_path, output_path, summary_path):
                 cell.number_format = "0.0000"
             if crawled and col >= 19:
                 cell.font = copy(CRAWLED_FONT)
-            if official_price_from_crawl and col == 14:
+                if col == 19 and crawled.get("verify_url"):
+                    cell.hyperlink = crawled["verify_url"]
+                    cell.style = "Hyperlink"
+                    cell.font = copy(CRAWLED_FONT)
+            if official_price_verified_by_api and col == 14:
                 cell.font = copy(CRAWLED_FONT)
         preview.append({HEADERS[i]: record[i] for i in range(len(HEADERS))})
 

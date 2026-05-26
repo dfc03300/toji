@@ -82,6 +82,23 @@ async function readJsonResponse(response) {
   }
 }
 
+async function postFormJson(url, params) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "User-Agent": "Mozilla/5.0",
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "X-Requested-With": "XMLHttpRequest"
+    },
+    body: new URLSearchParams(params)
+  });
+  const data = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(data.error?.message || data.error || `API 호출 실패: ${response.status}`);
+  }
+  return data;
+}
+
 function parseMultipart(buffer, contentTypeHeader) {
   const match = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentTypeHeader || "");
   if (!match) throw new Error("multipart boundary missing");
@@ -369,6 +386,30 @@ async function microsoftCallback(req, res, url) {
   }
 }
 
+async function verifyGsi(req, res, url) {
+  const params = Object.fromEntries(url.searchParams.entries());
+  try {
+    const data = await postFormJson("https://www.realtyprice.kr/notice/m/gsi/getList.do", params);
+    sendJson(res, 200, {
+      source: "realtyprice.kr",
+      method: "POST",
+      endpoint: "https://www.realtyprice.kr/notice/m/gsi/getList.do",
+      searchPage: "https://www.realtyprice.kr/notice/m/gsi/search.do",
+      params,
+      rows: data?.model?.list || [],
+      raw: data
+    });
+  } catch (error) {
+    sendJson(res, 502, {
+      error: error.message,
+      method: "POST",
+      endpoint: "https://www.realtyprice.kr/notice/m/gsi/getList.do",
+      searchPage: "https://www.realtyprice.kr/notice/m/gsi/search.do",
+      params
+    });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -382,6 +423,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname.startsWith("/api/download/")) return download(req, res, url.pathname.split("/").pop());
     if (req.method === "GET" && url.pathname === "/api/m365/status") return m365Status(req, res);
     if (req.method === "GET" && url.pathname.startsWith("/api/m365/start/")) return m365Start(req, res, url.pathname.split("/").pop());
+    if (req.method === "GET" && url.pathname === "/api/realtyprice/gsi") return verifyGsi(req, res, url);
     if (req.method === "GET" && url.pathname === "/auth/microsoft/callback") return microsoftCallback(req, res, url);
     return serveStatic(req, res);
   } catch (error) {
