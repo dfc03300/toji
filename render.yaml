@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: toji
+    runtime: node
+    plan: free
+    buildCommand: npm install && python3 -m pip install -r requirements.txt
+    startCommand: npm start
+    envVars:
+      - key: PYTHON_EXE
+        value: python3

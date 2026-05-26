@@ -11,7 +11,9 @@ const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, "public");
 const UPLOADS = path.join(ROOT, "uploads");
 const OUTPUTS = path.join(ROOT, "outputs");
-const PYTHON = process.env.PYTHON_EXE || "C:\\Users\\daekyo\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe";
+const PYTHON = process.env.PYTHON_EXE || (process.platform === "win32"
+  ? "C:\\Users\\daekyo\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe"
+  : "python3");
 
 const jobs = new Map();
 
