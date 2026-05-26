@@ -392,11 +392,14 @@ input {
   padding: 0;
   border: 1px solid var(--line);
   background: #fff;
-  display: flex;
   flex-direction: column;
   margin: auto;
   position: fixed;
   inset: 0;
+}
+
+.gsi-dialog[open] {
+  display: flex;
 }
 
 .gsi-dialog::backdrop {
@@ -668,6 +671,18 @@ input {
 
 .sheet-grid td.crawled {
   color: var(--red);
+}
+
+.sheet-grid td[data-col="18"] {
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet-grid td[data-col="18"]:focus {
+  white-space: normal;
+  overflow: visible;
 }
 
 .sheet-grid td[data-col="7"]:empty::before,

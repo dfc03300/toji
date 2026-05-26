@@ -132,7 +132,9 @@ def code_lookup(si_gun_gu, dong):
         exact = next((x for x in items if x.get("NAME") == name), None)
         if exact:
             return exact
-        return next((x for x in items if x.get("NAME", "").startswith(name) or name.startswith(x.get("NAME", "")[:2])), None)
+        if len(name) >= 2:
+            return next((x for x in items if x.get("NAME", "").startswith(name)), None)
+        return None
 
     sido = find_name(SIDO_CACHE["sido"], sido_name)
     if not sido:
@@ -290,29 +292,78 @@ def _crawl_task(task):
         return idx, None, f"{prefix}조회실패: {exc}"
 
 
-def find_land_row(ws, row):
-    if norm(ws.cell(row, 6).value) == "토지":
+def find_header_columns(ws):
+    header_row = None
+    columns = {}
+    for row in range(1, min(ws.max_row, 20) + 1):
+        row_columns = {}
+        for col in range(1, ws.max_column + 1):
+            value = norm(ws.cell(row, col).value)
+            if value:
+                row_columns[value] = col
+        if "상세물건번호" in row_columns and "시군구" in row_columns and "지번" in row_columns:
+            header_row = row
+            columns = row_columns
+            break
+    if not columns:
+        raise ValueError("원본 엑셀에서 상세물건번호/시군구/지번 헤더를 찾지 못했습니다.")
+
+    detail_col = columns.get("상세물건번호")
+    if detail_col and detail_col > 1:
+        prev_header = norm(ws.cell(header_row, detail_col - 1).value)
+        has_prev_values = any(ws.cell(r, detail_col - 1).value not in (None, "") for r in range(header_row + 1, min(ws.max_row, header_row + 20) + 1))
+        if not prev_header and has_prev_values:
+            columns["기호"] = detail_col - 1
+    columns["_header_row"] = header_row
+    return columns
+
+
+def col_value(ws, row, columns, name, default=None):
+    col = columns.get(name)
+    if not col:
+        return default
+    return ws.cell(row, col).value
+
+
+def find_land_row(ws, row, columns):
+    detail_col = columns.get("상세물건구분")
+    jibun_col = columns.get("지번")
+    if norm(ws.cell(row, detail_col).value) == "토지":
         return row
-    jibun = norm(ws.cell(row, 5).value)
+    jibun = norm(ws.cell(row, jibun_col).value)
     for candidate in range(row + 1, min(ws.max_row, row + 5) + 1):
-        if norm(ws.cell(candidate, 6).value) == "토지":
-            if not jibun or norm(ws.cell(candidate, 5).value) == jibun:
+        if norm(ws.cell(candidate, detail_col).value) == "토지":
+            if not jibun or norm(ws.cell(candidate, jibun_col).value) == jibun:
                 return candidate
             return candidate
     return row
 
 
-def selected_rows(ws):
+def selected_rows(ws, columns):
     rows = []
-    for row in range(5, ws.max_row + 1):
-        value = ws.cell(row, 1).value
-        if isinstance(value, int):
+    seen = set()
+    source_col = columns.get("기호") or columns.get("상세물건번호")
+    detail_col = columns.get("상세물건구분")
+    jibun_col = columns.get("지번")
+    trade_col = columns.get("거래시점")
+    for row in range(columns.get("_header_row", 1) + 1, ws.max_row + 1):
+        detail = norm(ws.cell(row, detail_col).value)
+        if detail in ("", "상세물건구분", "토지"):
+            continue
+        value = ws.cell(row, source_col).value
+        if value in (None, ""):
+            continue
+        key = (norm(value), norm(ws.cell(row, jibun_col).value), norm(ws.cell(row, trade_col).value))
+        if key in seen:
+            continue
+        seen.add(key)
+        if isinstance(value, (int, float)) or norm(value).isdigit():
             rows.append(row)
     return rows
 
 
-def classify_review(ws, row):
-    detail = norm(ws.cell(row, 6).value)
+def classify_review(ws, row, columns):
+    detail = norm(col_value(ws, row, columns, "상세물건구분"))
     memo = " ".join(norm(ws.cell(row, col).value) for col in (15, 18))
     if detail == "토지" or "토지만" in memo:
         return "토지만"
@@ -421,31 +472,40 @@ def build(input_path, output_path, summary_path):
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(HEADERS))
 
     warnings = []
-    rows = selected_rows(src_values)
+    columns = find_header_columns(src_values)
+    rows = selected_rows(src_values, columns)
     log(f"선택 사례 {len(rows)}건을 정리하는 중입니다.")
 
     # Phase 1: 원본 엑셀에서 모든 행 데이터 추출
     rows_data = []
     for idx, row in enumerate(rows, start=1):
-        land_row = find_land_row(src_values, row)
-        official_price_orig = src_values.cell(row, 26).value
+        land_row = find_land_row(src_values, row, columns)
+        official_price_orig = col_value(src_values, row, columns, "개별공시지가")
+        unit_price = col_value(src_values, row, columns, "단가")
+        land_area = col_value(src_values, land_row, columns, "전체면적")
+        trade_price = col_value(src_values, row, columns, "물건금액")
+        if unit_price in (None, "") and trade_price not in (None, "") and land_area not in (None, ""):
+            try:
+                unit_price = to_number(trade_price) / to_number(land_area)
+            except Exception:
+                unit_price = None
         rows_data.append({
             "idx": idx,
             "row": row,
-            "source_no": src_values.cell(row, 1).value,
-            "si_gun_gu": src_values.cell(row, 3).value,
-            "dong": src_values.cell(row, 4).value,
-            "jibun": src_values.cell(row, 5).value,
-            "trade_date": src_values.cell(row, 9).value,
-            "land_area": src_values.cell(land_row, 10).value,
+            "source_no": col_value(src_values, row, columns, "기호", col_value(src_values, row, columns, "상세물건번호")),
+            "si_gun_gu": col_value(src_values, row, columns, "시군구"),
+            "dong": col_value(src_values, row, columns, "소재지"),
+            "jibun": col_value(src_values, row, columns, "지번"),
+            "trade_date": col_value(src_values, row, columns, "거래시점"),
+            "land_area": land_area,
             "official_price_orig": official_price_orig,
-            "unit_price": src_values.cell(row, 16).value,
-            "public_ratio_orig": src_values.cell(row, 27).value,
-            "col7": src_values.cell(row, 7).value,
-            "col8": src_values.cell(row, 8).value,
-            "col12": src_values.cell(row, 12).value,
-            "col25": src_values.cell(row, 25).value,
-            "review": classify_review(src_values, row),
+            "unit_price": unit_price,
+            "public_ratio_orig": col_value(src_values, row, columns, "개공비율"),
+            "jijuk": col_value(src_values, land_row, columns, "지목"),
+            "zone": col_value(src_values, land_row, columns, "용도지역"),
+            "trade_price": trade_price,
+            "road": col_value(src_values, row, columns, "도로교통"),
+            "review": classify_review(src_values, row, columns),
             "has_price": official_price_orig not in (None, ""),
         })
 
@@ -476,7 +536,7 @@ def build(input_path, output_path, summary_path):
                 crawl_data = crawl_columns(crawled, crawl_status)
             else:
                 crawl_data = crawl_columns(None, crawl_status)
-                if crawled is None and "조회실패" in crawl_status:
+                if crawled is None:
                     warnings.append(f"{norm(d['dong'])} {norm(d['jibun'])} - {crawl_status}")
         else:
             if crawled and crawled.get("price"):
@@ -502,13 +562,13 @@ def build(input_path, output_path, summary_path):
             display_jibun(d["jibun"]),
             d["trade_date"],
             d["land_area"],
-            d["col7"],
-            abbreviation(d["col8"]),
+            d["jijuk"],
+            d["zone"],
             "",
-            d["col25"],
+            d["road"],
             "",
             "",
-            d["col12"],
+            d["trade_price"],
             unit_price,
             official_price,
             public_ratio,

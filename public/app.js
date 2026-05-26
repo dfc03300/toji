@@ -57,6 +57,7 @@ const els = {
   previewHead: document.querySelector("#previewHead"),
   previewBody: document.querySelector("#previewBody"),
   gsiPopupBtn: document.querySelector("#gsiPopupBtn"),
+  batchRateBtn: document.querySelector("#batchRateBtn"),
   saveCellsBtn: document.querySelector("#saveCellsBtn"),
   gsiDialog: document.querySelector("#gsiDialog"),
   gsiDialogClose: document.querySelector("#gsiDialogClose"),
@@ -106,7 +107,7 @@ function nowTime() {
 }
 
 function todayLabel() {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit" }).format(new Date());
+  return new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric" }).format(new Date());
 }
 
 function escapeHtml(value) {
@@ -547,6 +548,7 @@ async function poll(jobId) {
     setText(els.downloadBtn, "엑셀 다운로드 가능");
     state.currentJobId = job.id;
     if (els.saveCellsBtn) els.saveCellsBtn.disabled = false;
+    if (els.batchRateBtn) els.batchRateBtn.disabled = false;
     setText(els.summaryText, `${job.caseCount || 0}건을 자동정리 탭에 작성했습니다.`);
     setText(els.sheetName, job.sheetName || "자동정리");
     addLog(`완료: ${job.caseCount || 0}건을 ${job.sheetName || "자동정리"} 탭에 기록했습니다.`, "success");
@@ -596,6 +598,8 @@ async function startProcess() {
   els.downloadBtn.href = "#";
   setServerStatus("처리 중");
   setStep(0);
+  if (els.saveCellsBtn) els.saveCellsBtn.disabled = true;
+  if (els.batchRateBtn) els.batchRateBtn.disabled = true;
   addLog("엑셀 파일을 서버로 전송하는 중입니다...");
 
   const form = new FormData();
@@ -630,7 +634,8 @@ async function saveCells() {
       if (colIndex !== COL_TIME_RATE && colIndex !== COL_TIME_ADJ) return;
       const value = td.textContent.trim();
       if (!value) return;
-      patches.push({ row: excelRow, col: colIndex + 1, value });
+      const format = colIndex === COL_TIME_RATE ? "0.0000" : "#,##0";
+      patches.push({ row: excelRow, col: colIndex + 1, value, format });
     });
   });
   if (!patches.length) {
@@ -704,6 +709,23 @@ els.downloadBtn.addEventListener("click", (event) => {
     return;
   }
   downloadResultFile(els.downloadBtn.getAttribute("href")).catch((error) => addLog(error.message, "error"));
+});
+
+els.batchRateBtn?.addEventListener("click", () => {
+  const input = prompt("모든 행에 적용할 시점수정치를 입력하세요.\n예) 1.0056  (단가 × 시점수정치 = 시점수정)");
+  if (!input) return;
+  const rate = parseFloat(input.replace(/,/g, ""));
+  if (isNaN(rate) || rate <= 0) {
+    addLog("유효한 시점수정치를 입력해 주세요. (예: 1.0056)", "error");
+    return;
+  }
+  let count = 0;
+  els.previewBody.querySelectorAll(`td[data-col="${COL_TIME_RATE}"]`).forEach((td) => {
+    td.textContent = rate;
+    td.dispatchEvent(new Event("input", { bubbles: true }));
+    count++;
+  });
+  addLog(`시점수정치 ${rate}를 ${count}개 행에 일괄 적용했습니다.`, "success");
 });
 
 els.saveCellsBtn?.addEventListener("click", () => saveCells().catch((error) => addLog(error.message, "error")));
@@ -781,6 +803,7 @@ els.gsiSuggestList.addEventListener("click", (event) => {
   els.gsiKeyword.value = item.label;
   setText(els.gsiSelectedAddress, `선택: ${item.label}`);
   els.gsiSuggestList.classList.add("hidden");
+  els.gsiKeyword.focus();
 });
 
 document.addEventListener("click", (event) => {

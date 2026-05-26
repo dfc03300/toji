@@ -38,7 +38,10 @@ def apply(xlsx_path, patches):
         cell.font = copy(DEFAULT_FONT)
         cell.border = border
         cell.alignment = Alignment(vertical="center")
-        if isinstance(val, (int, float)):
+        fmt = patch.get("format")
+        if fmt:
+            cell.number_format = fmt
+        elif isinstance(val, (int, float)):
             cell.number_format = "#,##0"
     wb.save(xlsx_path)
 

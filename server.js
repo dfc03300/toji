@@ -627,11 +627,24 @@ async function download(req, res, id) {
     sendJson(res, 410, { error: "다운로드 가능 기간이 만료되었습니다. 다시 분석해 주세요." });
     return;
   }
+  let stat;
+  try {
+    stat = await fsp.stat(job.output);
+  } catch {
+    sendJson(res, 404, { error: "출력 파일을 찾지 못했습니다. 다시 분석해 주세요." });
+    return;
+  }
   res.writeHead(200, {
     "Content-Type": contentType(job.output),
+    "Content-Length": stat.size,
     "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(job.savedFileName || `토지거래_자동정리_${id}.xlsx`)}`
   });
-  fs.createReadStream(job.output).pipe(res);
+  const stream = fs.createReadStream(job.output);
+  stream.on("error", (err) => {
+    if (!res.headersSent) sendJson(res, 500, { error: err.message });
+    else res.destroy(err);
+  });
+  stream.pipe(res);
 }
 
 async function openOutputFolder(req, res, id) {
@@ -878,6 +891,13 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 500, { error: error.message });
   }
 });
+
+setInterval(() => {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  for (const [key, data] of authStates) {
+    if (data.createdAt < cutoff) authStates.delete(key);
+  }
+}, 5 * 60 * 1000);
 
 server.listen(PORT, HOST, () => {
   console.log(`http://${HOST}:${PORT}`);
