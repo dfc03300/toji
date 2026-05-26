@@ -35,6 +35,8 @@ const columnLetters = ["", ...Array.from({ length: headers.length }, (_, index) 
 const state = {
   file: null,
   timer: null,
+  lastProgress: "",
+  logs: [],
 };
 
 const els = {
@@ -44,8 +46,7 @@ const els = {
   fileMeta: document.querySelector("#fileMeta"),
   processBtn: document.querySelector("#processBtn"),
   serverStatus: document.querySelector("#serverStatus"),
-  progressText: document.querySelector("#progressText"),
-  steps: [...document.querySelectorAll("#steps li")],
+  steps: [...document.querySelectorAll("#steps span")],
   downloadBtn: document.querySelector("#downloadBtn"),
   savePath: document.querySelector("#savePath"),
   previewHead: document.querySelector("#previewHead"),
@@ -53,7 +54,54 @@ const els = {
   summaryText: document.querySelector("#summaryText"),
   sheetName: document.querySelector("#sheetName"),
   officeBtn: document.querySelector("#officeBtn"),
+  logStream: document.querySelector("#logStream"),
+  logSearch: document.querySelector("#logSearch"),
+  rowCount: document.querySelector("#rowCount"),
 };
+
+function nowTime() {
+  return new Intl.DateTimeFormat("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date());
+}
+
+function todayLabel() {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit" }).format(new Date());
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function addLog(message, type = "info") {
+  if (!message || state.lastProgress === message) return;
+  state.lastProgress = message;
+  state.logs.push({ time: nowTime(), message, type });
+  renderLogs();
+}
+
+function renderLogs() {
+  const query = els.logSearch.value.trim().toLowerCase();
+  const logs = state.logs.filter((log) => !query || log.message.toLowerCase().includes(query));
+  els.logStream.innerHTML = [
+    `<div class="log-day">${todayLabel()}</div>`,
+    ...logs.map((log) => `
+      <div class="log-line ${log.type}">
+        <span class="log-time">${log.time}</span>
+        <span class="log-arrow">==&gt;</span>
+        <span class="log-message">${escapeHtml(log.message)}</span>
+      </div>
+    `),
+  ].join("");
+  els.logStream.scrollTop = els.logStream.scrollHeight;
+}
 
 function setStep(index) {
   els.steps.forEach((step, i) => {
@@ -75,7 +123,8 @@ function chooseFile(file) {
   els.fileName.textContent = file.name;
   els.fileMeta.textContent = `${formatBytes(file.size)} · 업로드 준비 완료`;
   els.processBtn.disabled = false;
-  els.serverStatus.textContent = "파일 선택됨";
+  els.serverStatus.textContent = "파일 선택";
+  addLog(`Selected file: ${file.name} (${formatBytes(file.size)})`);
 }
 
 function renderHead() {
@@ -96,8 +145,15 @@ function valueText(value) {
   return String(value);
 }
 
+function isCrawledCell(header, row) {
+  if (header === "크롤링상세" || header === "크롤링URL") return Boolean(row[header]);
+  if (header === "개별공시지가") return /공시지가 .*선택|조회주소|요청URL/.test(String(row["크롤링상세"] || ""));
+  return false;
+}
+
 function renderPreview(rows) {
   renderHead();
+  els.rowCount.textContent = `${rows?.length || 0} rows`;
   if (!rows?.length) {
     els.previewBody.innerHTML = `<tr><td class="row-head">1</td><td class="empty" colspan="${headers.length}">업로드 후 결과 미리보기가 표시됩니다.</td></tr>`;
     return;
@@ -106,7 +162,10 @@ function renderPreview(rows) {
   els.previewBody.innerHTML = rows
     .map((row, rowIndex) => {
       const cells = headers
-        .map((header) => `<td contenteditable="true" spellcheck="false">${valueText(row[header])}</td>`)
+        .map((header) => {
+          const className = isCrawledCell(header, row) ? " class=\"crawled\"" : "";
+          return `<td${className} contenteditable="true" spellcheck="false">${escapeHtml(valueText(row[header]))}</td>`;
+        })
         .join("");
       return `<tr><td class="row-head">${rowIndex + 1}</td>${cells}</tr>`;
     })
@@ -118,15 +177,15 @@ async function poll(jobId) {
   const job = await response.json();
   if (!response.ok) throw new Error(job.error || "작업 상태를 읽지 못했습니다.");
 
-  els.progressText.textContent = job.progress || "처리 중입니다.";
-  if (/조회/.test(job.progress || "")) setStep(2);
+  if (job.progress) addLog(job.progress);
+  if (/조회|공시지가/.test(job.progress || "")) setStep(2);
   else if (/저장|완료/.test(job.progress || "")) setStep(3);
   else setStep(1);
 
   if (job.status === "failed") {
     clearInterval(state.timer);
     els.serverStatus.textContent = "실패";
-    els.progressText.innerHTML = `<span class="error">${job.error || "처리 실패"}</span>`;
+    addLog(job.error || "처리 실패", "error");
     els.processBtn.disabled = false;
     return;
   }
@@ -141,6 +200,7 @@ async function poll(jobId) {
     els.savePath.textContent = job.savedPath ? `저장됨: ${job.savedPath}` : "저장 위치를 확인하지 못했습니다.";
     els.summaryText.textContent = `${job.caseCount || 0}건을 자동정리 탭에 작성했습니다.`;
     els.sheetName.textContent = job.sheetName || "자동정리";
+    addLog(`Completed: ${job.caseCount || 0} rows written to ${job.sheetName || "자동정리"}`, "success");
     renderPreview(job.preview);
     els.processBtn.disabled = false;
   }
@@ -148,13 +208,14 @@ async function poll(jobId) {
 
 async function startProcess() {
   if (!state.file) return;
+  state.lastProgress = "";
   els.processBtn.disabled = true;
   els.downloadBtn.classList.add("disabled");
   els.downloadBtn.href = "#";
   els.savePath.textContent = "저장 위치는 완료 후 표시됩니다.";
   els.serverStatus.textContent = "처리 중";
-  els.progressText.textContent = "파일을 업로드하는 중입니다.";
   setStep(0);
+  addLog("Uploading workbook...");
 
   const form = new FormData();
   form.append("file", state.file);
@@ -165,10 +226,11 @@ async function startProcess() {
     els.serverStatus.textContent = "오류";
     throw new Error(data.error || "업로드 실패");
   }
+  addLog(`Job accepted: ${data.jobId}`);
   state.timer = setInterval(() => poll(data.jobId).catch((error) => {
     clearInterval(state.timer);
     els.serverStatus.textContent = "오류";
-    els.progressText.innerHTML = `<span class="error">${error.message}</span>`;
+    addLog(error.message, "error");
     els.processBtn.disabled = false;
   }), 1200);
   await poll(data.jobId);
@@ -176,13 +238,15 @@ async function startProcess() {
 
 els.fileInput.addEventListener("change", (event) => chooseFile(event.target.files[0]));
 els.processBtn.addEventListener("click", () => startProcess().catch((error) => {
-  els.progressText.innerHTML = `<span class="error">${error.message}</span>`;
+  addLog(error.message, "error");
   els.processBtn.disabled = false;
 }));
 
 els.officeBtn.addEventListener("click", () => {
-  els.progressText.textContent = "Office 365 편집 연동은 Microsoft 로그인, OneDrive 업로드, Graph API 연결이 필요합니다.";
+  addLog("Office 365 편집 연동은 Microsoft 로그인, OneDrive 업로드, Graph API 연결이 필요합니다.");
 });
+
+els.logSearch.addEventListener("input", renderLogs);
 
 ["dragenter", "dragover"].forEach((eventName) => {
   els.dropzone.addEventListener(eventName, (event) => {
@@ -199,4 +263,6 @@ els.officeBtn.addEventListener("click", () => {
 });
 
 els.dropzone.addEventListener("drop", (event) => chooseFile(event.dataTransfer.files[0]));
+
 renderHead();
+addLog("Waiting for workbook upload.");

@@ -3,86 +3,112 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>토지 거래 정리 자동화</title>
+    <title>토지거래 정리</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <h1>토지거래</h1>
-          <p>정리 자동화</p>
+          <span class="brand-mark">토</span>
+          <div>
+            <strong>toji</strong>
+            <small>토지거래 정리</small>
+          </div>
         </div>
 
-        <label class="mini-upload" id="dropzone">
-          <input id="fileInput" type="file" accept=".xlsx" />
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"></path>
-            <path d="M14 2v5h5"></path>
-            <path d="M9 13h6"></path>
-            <path d="M9 17h6"></path>
-          </svg>
-          <span id="fileName">엑셀 업로드</span>
-          <small id="fileMeta">.xlsx</small>
-        </label>
+        <nav class="nav">
+          <a class="active" href="#work">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg>
+            작업
+          </a>
+          <a href="#logs">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path></svg>
+            로그
+          </a>
+          <a href="#preview">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18"></path><path d="M3 12h18"></path><path d="M3 19h18"></path><path d="M8 5v14"></path></svg>
+            데이터
+          </a>
+        </nav>
 
-        <button class="primary" id="processBtn" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 3v12"></path>
-            <path d="m17 10-5 5-5-5"></path>
-            <path d="M5 21h14"></path>
-          </svg>
-          정리 시작
-        </button>
+        <section class="control-panel" id="work">
+          <label class="upload-button" id="dropzone">
+            <input id="fileInput" type="file" accept=".xlsx" />
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"></path><path d="M14 2v5h5"></path><path d="M12 11v6"></path><path d="m9 14 3-3 3 3"></path></svg>
+            <span id="fileName">엑셀 업로드</span>
+            <small id="fileMeta">.xlsx</small>
+          </label>
 
-        <section class="side-section">
-          <div class="section-title">처리 상태</div>
-          <span class="status-pill" id="serverStatus">대기 중</span>
-          <p id="progressText">파일을 올리면 상태가 표시됩니다.</p>
-          <ol class="steps" id="steps">
-            <li class="active"><span></span>업로드</li>
-            <li><span></span>분석</li>
-            <li><span></span>조회</li>
-            <li><span></span>저장</li>
-          </ol>
+          <button class="primary" id="processBtn" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>
+            정리 시작
+          </button>
+
+          <a class="download disabled" id="downloadBtn" href="#" download>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+            다운로드
+          </a>
         </section>
 
-        <a class="download disabled" id="downloadBtn" href="#" download>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <path d="m7 10 5 5 5-5"></path>
-            <path d="M12 15V3"></path>
-          </svg>
-          다운로드
-        </a>
+        <section class="status-card">
+          <div class="status-row">
+            <span>상태</span>
+            <strong id="serverStatus">대기</strong>
+          </div>
+          <div class="steps" id="steps">
+            <span class="active">업로드</span>
+            <span>분석</span>
+            <span>조회</span>
+            <span>저장</span>
+          </div>
+        </section>
 
         <div class="save-path" id="savePath">저장 위치는 완료 후 표시됩니다.</div>
       </aside>
 
-      <section class="data-area">
-        <header class="data-toolbar">
+      <section class="workspace">
+        <header class="topbar">
           <div>
-            <h2>자동정리 시트 미리보기</h2>
-            <p id="summaryText">아직 처리된 사례가 없습니다.</p>
+            <h1>토지거래 정리</h1>
+            <p id="summaryText">원본 엑셀을 업로드하면 자동정리 탭을 생성합니다.</p>
           </div>
-          <div class="toolbar-actions">
+          <div class="top-actions">
             <span class="sheet-name" id="sheetName">자동정리</span>
-            <button class="secondary" type="button" id="officeBtn">Office 365 연동 준비</button>
+            <button class="secondary" type="button" id="officeBtn">Office 365</button>
           </div>
         </header>
 
-        <div class="viewer">
-          <table class="sheet-grid">
-            <thead>
-              <tr id="previewHead"></tr>
-            </thead>
-            <tbody id="previewBody">
-              <tr>
-                <td class="empty" colspan="20">업로드 후 결과 미리보기가 표시됩니다.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <section class="log-panel" id="logs">
+          <div class="log-toolbar">
+            <button class="log-filter" type="button">All logs</button>
+            <div class="log-search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+              <input id="logSearch" type="search" placeholder="Search logs" />
+            </div>
+            <span class="log-window">Live tail</span>
+          </div>
+          <div class="log-stream" id="logStream" aria-live="polite"></div>
+        </section>
+
+        <section class="data-card" id="preview">
+          <div class="data-title">
+            <strong>데이터 미리보기</strong>
+            <span id="rowCount">0 rows</span>
+          </div>
+          <div class="viewer">
+            <table class="sheet-grid">
+              <thead>
+                <tr id="previewHead"></tr>
+              </thead>
+              <tbody id="previewBody">
+                <tr>
+                  <td class="empty" colspan="21">업로드 후 결과 미리보기가 표시됩니다.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
     </main>
     <script src="/app.js"></script>
