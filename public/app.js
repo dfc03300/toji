@@ -44,12 +44,11 @@ const els = {
   fileInput: document.querySelector("#fileInput"),
   fileName: document.querySelector("#fileName"),
   fileMeta: document.querySelector("#fileMeta"),
+  brandHomeBtn: document.querySelector("#brandHomeBtn"),
   processBtn: document.querySelector("#processBtn"),
   serverStatus: document.querySelector("#serverStatus"),
   steps: [...document.querySelectorAll("#steps span")],
   downloadBtn: document.querySelector("#downloadBtn"),
-  savePath: document.querySelector("#savePath"),
-  copyPathBtn: document.querySelector("#copyPathBtn"),
   previewHead: document.querySelector("#previewHead"),
   previewBody: document.querySelector("#previewBody"),
   summaryText: document.querySelector("#summaryText"),
@@ -58,7 +57,6 @@ const els = {
   devViewBtn: document.querySelector("#devViewBtn"),
   historyViewBtn: document.querySelector("#historyViewBtn"),
   backToMainBtn: document.querySelector("#backToMainBtn"),
-  backFromHistoryBtn: document.querySelector("#backFromHistoryBtn"),
   mainView: document.querySelector("#mainView"),
   devView: document.querySelector("#devView"),
   historyView: document.querySelector("#historyView"),
@@ -72,7 +70,7 @@ const els = {
   requestList: document.querySelector("#requestList"),
   clearRequestsBtn: document.querySelector("#clearRequestsBtn"),
   historyList: document.querySelector("#historyList"),
-  clearHistoryBtn: document.querySelector("#clearHistoryBtn"),
+  historyUploadInput: document.querySelector("#historyUploadInput"),
 };
 
 function nowTime() {
@@ -94,6 +92,10 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function setText(element, text) {
+  if (element) element.textContent = text;
 }
 
 function addLog(message, type = "info") {
@@ -118,6 +120,14 @@ function renderLogs() {
   els.logStream.scrollTop = els.logStream.scrollHeight;
 }
 
+window.addEventListener("error", (event) => {
+  addLog(`화면 오류: ${event.message}`, "error");
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  addLog(`처리 오류: ${event.reason?.message || event.reason || "알 수 없는 오류"}`, "error");
+});
+
 function setStep(index) {
   els.steps.forEach((step, i) => {
     step.classList.toggle("active", i === index);
@@ -126,7 +136,7 @@ function setStep(index) {
 }
 
 function setServerStatus(text) {
-  if (els.serverStatus) els.serverStatus.textContent = text;
+  setText(els.serverStatus, text);
 }
 
 function showView(view) {
@@ -156,25 +166,25 @@ function upsertHistory(item) {
 
 function renderHistory() {
   const history = getHistory();
-  if (!history.length) {
-    els.historyList.innerHTML = `<div class="empty-list">아직 작업 히스토리가 없습니다.</div>`;
-    return;
-  }
-  els.historyList.innerHTML = history.map((item) => {
+  const rows = history.map((item) => {
     const expired = item.expiresAt && Date.now() > Date.parse(item.expiresAt);
-    const download = expired
+    const download = !item.downloadUrl
+      ? `<span class="history-muted">분석 대기</span>`
+      : expired
       ? `<span class="history-expired">만료됨</span>`
       : `<a href="${item.downloadUrl}" download>다운로드</a>`;
+    const expiresAt = item.expiresAt ? item.expiresAt.slice(0, 10) : "";
     return `
       <div class="history-item">
-        <div><strong>${escapeHtml(item.fileName || "-")}</strong><span>업로드 파일</span></div>
-        <div><strong>${escapeHtml(item.version || "-")}</strong><span>버전</span></div>
-        <div><strong>${escapeHtml(item.createdAt || "-")}</strong><span>작업일시</span></div>
-        <div><strong>${escapeHtml(item.savedFileName || "-")}</strong><span>다운로드 파일</span></div>
-        <div>${download}<br><span>${escapeHtml(item.expiresAt ? `만료 ${item.expiresAt.slice(0, 10)}` : "")}</span></div>
+        <div><strong>${escapeHtml(item.fileName || "-")}</strong></div>
+        <div>${escapeHtml(item.version || "-")}</div>
+        <div>${escapeHtml(item.createdAt || "-")}</div>
+        <div><strong>${escapeHtml(item.savedFileName || "-")}</strong></div>
+        <div>${download}${expiresAt ? `<small>${escapeHtml(`${expiresAt}까지`)}</small>` : ""}</div>
       </div>
     `;
   }).join("");
+  els.historyList.innerHTML = rows || `<div class="empty-list">아직 작업 히스토리가 없습니다.</div>`;
 }
 
 function formatBytes(bytes) {
@@ -187,11 +197,11 @@ function formatBytes(bytes) {
 function chooseFile(file) {
   if (!file) return;
   state.file = file;
-  els.fileName.textContent = file.name;
-  els.fileMeta.textContent = `${formatBytes(file.size)} · 업로드 준비 완료`;
+  setText(els.fileName, file.name);
+  setText(els.fileMeta, `${formatBytes(file.size)} · 업로드 준비 완료`);
   els.processBtn.disabled = false;
   els.processBtn.classList.remove("complete");
-  els.processBtn.textContent = "파일 분석";
+  setText(els.processBtn, "파일 분석");
   setServerStatus("파일 선택");
   addLog(`Selected file: ${file.name} (${formatBytes(file.size)})`);
   upsertHistory({
@@ -237,7 +247,7 @@ function isCrawledCell(header, row) {
 
 function renderPreview(rows) {
   renderHead();
-  els.rowCount.textContent = `${rows?.length || 0} rows`;
+  setText(els.rowCount, `${rows?.length || 0} rows`);
   if (!rows?.length) {
     els.previewBody.innerHTML = `<tr><td class="row-head">1</td><td class="empty" colspan="${headers.length}">업로드 후 결과 미리보기가 표시됩니다.</td></tr>`;
     return;
@@ -282,12 +292,12 @@ async function poll(jobId) {
     els.downloadBtn.href = job.downloadUrl;
     els.downloadBtn.classList.remove("disabled");
     els.downloadBtn.classList.add("complete");
-    els.downloadBtn.textContent = "엑셀 다운로드 가능";
+    setText(els.downloadBtn, "엑셀 다운로드 가능");
     state.currentJobId = job.id;
-    els.savePath.textContent = job.savedPath || "저장 위치를 확인하지 못했습니다.";
-    els.summaryText.textContent = `${job.caseCount || 0}건을 자동정리 탭에 작성했습니다.`;
-    els.sheetName.textContent = job.sheetName || "자동정리";
+    setText(els.summaryText, `${job.caseCount || 0}건을 자동정리 탭에 작성했습니다.`);
+    setText(els.sheetName, job.sheetName || "자동정리");
     addLog(`Completed: ${job.caseCount || 0} rows written to ${job.sheetName || "자동정리"}`, "success");
+    addLog(`저장 폴더: ${job.savedFolder || "저장 위치를 확인하지 못했습니다."}`, job.savedFolder ? "success" : "error");
     upsertHistory({
       jobId: job.id,
       fileName: job.fileName,
@@ -306,7 +316,7 @@ async function poll(jobId) {
     renderPreview(job.preview);
     els.processBtn.disabled = false;
     els.processBtn.classList.add("complete");
-    els.processBtn.textContent = "분석 완료";
+    setText(els.processBtn, "분석 완료");
   }
 }
 
@@ -315,12 +325,11 @@ async function startProcess() {
   state.lastProgress = "";
   els.processBtn.disabled = true;
   els.processBtn.classList.remove("complete");
-  els.processBtn.textContent = "분석 중";
+  setText(els.processBtn, "분석 중");
   els.downloadBtn.classList.add("disabled");
   els.downloadBtn.classList.remove("complete");
-  els.downloadBtn.textContent = "엑셀 다운로드";
+  setText(els.downloadBtn, "엑셀 다운로드");
   els.downloadBtn.href = "#";
-  els.savePath.textContent = "저장 위치는 완료 후 표시됩니다.";
   setServerStatus("처리 중");
   setStep(0);
   addLog("Uploading workbook...");
@@ -345,6 +354,28 @@ async function startProcess() {
 }
 
 els.fileInput.addEventListener("change", (event) => chooseFile(event.target.files[0]));
+
+els.historyUploadInput?.addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  upsertHistory({
+    jobId: `queued-${Date.now()}`,
+    fileName: file.name,
+    version: "분석 대기",
+    createdAt: new Intl.DateTimeFormat("ko-KR", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date()),
+    savedFileName: "",
+    downloadUrl: "",
+    expiresAt: "",
+  });
+  event.target.value = "";
+});
+
 els.processBtn.addEventListener("click", () => startProcess().catch((error) => {
   addLog(error.message, "error");
   els.processBtn.disabled = false;
@@ -383,7 +414,7 @@ els.historyViewBtn.addEventListener("click", () => {
   showView("history");
 });
 
-els.backFromHistoryBtn.addEventListener("click", () => {
+els.brandHomeBtn.addEventListener("click", () => {
   showView("main");
 });
 
@@ -449,7 +480,7 @@ els.requestForm.addEventListener("submit", async (event) => {
   });
   saveRequests(requests);
   els.requestForm.reset();
-  els.imagePreview.textContent = "첨부 이미지 없음";
+  setText(els.imagePreview, "첨부 이미지 없음");
   renderRequests();
 });
 
@@ -457,37 +488,6 @@ els.clearRequestsBtn.addEventListener("click", () => {
   if (!confirm("등록된 기능 요청을 모두 삭제할까요?")) return;
   saveRequests([]);
   renderRequests();
-});
-
-els.clearHistoryBtn.addEventListener("click", () => {
-  if (!confirm("작업 히스토리를 모두 삭제할까요?")) return;
-  saveHistory([]);
-  renderHistory();
-});
-
-els.savePath.addEventListener("click", async () => {
-  if (!state.currentJobId) {
-    addLog("아직 열 저장 경로가 없습니다.", "error");
-    return;
-  }
-  const response = await fetch(`/api/open-folder/${state.currentJobId}`, { method: "POST" });
-  const result = await response.json();
-  if (!response.ok) {
-    addLog(result.error || "저장 폴더를 열지 못했습니다.", "error");
-    return;
-  }
-  addLog(`Opened folder: ${result.folder}`);
-});
-
-els.copyPathBtn.addEventListener("click", async (event) => {
-  event.stopPropagation();
-  const text = els.savePath.textContent.trim();
-  if (!text || text === "완료 후 표시" || text === "저장 위치는 완료 후 표시됩니다.") {
-    addLog("복사할 저장 경로가 아직 없습니다.", "error");
-    return;
-  }
-  await navigator.clipboard.writeText(text);
-  addLog("저장 경로를 클립보드에 복사했습니다.");
 });
 
 ["dragenter", "dragover"].forEach((eventName) => {

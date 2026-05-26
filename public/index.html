@@ -9,7 +9,10 @@
   <body>
     <main class="app-shell">
       <aside class="sidebar">
-        <h1>토지거래 정리</h1>
+        <button class="brand-home" type="button" id="brandHomeBtn" aria-label="메인 화면으로">
+          <span class="toji-icon">T</span>
+          <strong>토지거래 정리</strong>
+        </button>
 
         <label class="file-row" id="dropzone">
           <input id="fileInput" type="file" accept=".xlsx" />
@@ -20,29 +23,21 @@
         <button class="text-button primary" id="processBtn" disabled>파일 분석</button>
         <a class="text-button disabled" id="downloadBtn" href="#" download>엑셀 다운로드</a>
 
-        <dl class="meta-list">
-          <div>
-            <dt>저장 경로 <button class="copy-path-button" type="button" id="copyPathBtn">복사</button></dt>
-            <dd id="savePath">완료 후 표시</dd>
-          </div>
-        </dl>
-
         <div class="secondary-actions">
-          <button class="text-button muted" type="button" id="officeBtn">Office 365에서 편집</button>
-          <button class="text-button muted" type="button" id="devViewBtn">개발예정 기능</button>
+          <button class="icon-button office-button" type="button" id="officeBtn" aria-label="Office 365에서 편집" title="Office 365에서 편집">
+            <svg class="office365-icon" viewBox="0 0 32 32" aria-hidden="true">
+              <path fill="#f25022" d="M15.6 2.5 27 6.9v18.2l-11.4 4.4L5 25.8V6.2l10.6-3.7Z" />
+              <path fill="#ffb900" d="M15.6 6.1 23.4 9v14l-7.8 2.9-7-2.3V8.4l7-2.3Z" />
+              <path fill="#7fba00" d="M15.6 9.4 20 11v10l-4.4 1.6-3.8-1.2v-11l3.8-1Z" />
+              <path fill="#00a4ef" d="M15.6 12.2 17.9 13v6l-2.3.8-2-.6v-6.4l2-.6Z" />
+            </svg>
+          </button>
+          <button class="text-button muted" type="button" id="devViewBtn">개발 요청</button>
           <button class="text-button muted" type="button" id="historyViewBtn">작업 히스토리</button>
         </div>
       </aside>
 
       <section class="workspace" id="mainView">
-        <header class="topbar">
-          <div>
-            <strong id="sheetName">자동정리</strong>
-            <span id="summaryText">원본 엑셀을 업로드하면 결과가 표시됩니다.</span>
-          </div>
-          <span id="rowCount">0 rows</span>
-        </header>
-
         <section class="log-area">
           <div class="section-header">
             <strong>처리 로그</strong>
@@ -73,7 +68,7 @@
       <section class="workspace dev-workspace hidden" id="devView">
         <header class="topbar">
           <div>
-            <strong>개발예정 기능</strong>
+            <strong>개발 요청</strong>
           </div>
           <button class="plain-button" type="button" id="backToMainBtn">기존 화면으로</button>
         </header>
@@ -154,18 +149,20 @@
       </section>
 
       <section class="workspace history-workspace hidden" id="historyView">
-        <header class="topbar">
-          <div>
-            <strong>작업 히스토리</strong>
-            <span>업로드 파일과 다운로드 결과를 버전별로 확인합니다.</span>
-          </div>
-          <button class="plain-button" type="button" id="backFromHistoryBtn">기존 화면으로</button>
-        </header>
-
         <section class="history-panel">
-          <div class="section-header">
-            <strong>파일 작업 기록</strong>
-            <button class="plain-button" type="button" id="clearHistoryBtn">히스토리 삭제</button>
+          <div class="history-toolbar">
+            <label class="history-upload-button">
+              파일 업로드
+              <input type="file" id="historyUploadInput" accept=".xlsx" />
+            </label>
+            <span>작업은 나중에 진행</span>
+          </div>
+          <div class="history-table-head">
+            <span>업로드 파일</span>
+            <span>버전</span>
+            <span>작업일시</span>
+            <span>다운로드 파일</span>
+            <span>다운로드</span>
           </div>
           <div class="history-list" id="historyList"></div>
         </section>
