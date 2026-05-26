@@ -17,7 +17,8 @@ const headers = [
   "검토",
   "시점수정치",
   "시점수정",
-  "크롤링상태",
+  "크롤링상세",
+  "크롤링URL",
 ];
 
 const columnLetters = ["", ...Array.from({ length: headers.length }, (_, index) => {

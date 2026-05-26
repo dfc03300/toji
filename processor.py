@@ -31,8 +31,13 @@ HEADERS = [
     "검토",
     "시점수정치",
     "시점수정",
-    "크롤링상태",
+    "크롤링상세",
+    "크롤링URL",
 ]
+
+DEFAULT_FONT = Font(name="맑은 고딕", size=11)
+HEADER_FONT = Font(name="맑은 고딕", size=11, bold=True)
+CRAWLED_FONT = Font(name="맑은 고딕", size=11, color="C00000")
 
 SIDO_CACHE = {}
 SIGUNGU_CACHE = {}
@@ -137,32 +142,30 @@ def crawl_price(si_gun_gu, dong, jibun, trade_date):
     if not bun1:
         return None, "지번 파싱 실패"
 
-    rows = get_list(
-        "/notice/m/gsi/getList.do",
-        {
-            "search_detail_gbn": "2",
-            "notice_year": "",
-            "notice_year_nm": "",
-            "sido": sido["CODE"],
-            "sido_nm": sido["NAME"],
-            "sigungu": sigungu["CODE"],
-            "sigungu_nm": sigungu["NAME"],
-            "road_reg": sigungu["CODE"],
-            "road_initial": "",
-            "road_initial_nm": "",
-            "road_code": "",
-            "road_code_nm": "",
-            "dongri": dongri["CODE"],
-            "dongri_nm": dongri["NAME"],
-            "reg": sigungu["CODE"],
-            "eub": dongri["CODE"],
-            "san": san,
-            "bun1": bun1,
-            "bun2": bun2,
-            "build_bun1": "",
-            "build_bun2": "00000",
-        },
-    )
+    params = {
+        "search_detail_gbn": "2",
+        "notice_year": "",
+        "notice_year_nm": "",
+        "sido": sido["CODE"],
+        "sido_nm": sido["NAME"],
+        "sigungu": sigungu["CODE"],
+        "sigungu_nm": sigungu["NAME"],
+        "road_reg": sigungu["CODE"],
+        "road_initial": "",
+        "road_initial_nm": "",
+        "road_code": "",
+        "road_code_nm": "",
+        "dongri": dongri["CODE"],
+        "dongri_nm": dongri["NAME"],
+        "reg": sigungu["CODE"],
+        "eub": dongri["CODE"],
+        "san": san,
+        "bun1": bun1,
+        "bun2": bun2,
+        "build_bun1": "",
+        "build_bun2": "00000",
+    }
+    rows = get_list("/notice/m/gsi/getList.do", params)
     if not rows:
         return None, "조회결과 없음"
 
@@ -178,7 +181,41 @@ def crawl_price(si_gun_gu, dong, jibun, trade_date):
         "notice_ymd": chosen.get("notice_ymd"),
         "address": chosen.get("addr"),
         "rows": len(rows),
+        "query": {
+            "si_gun_gu": norm(si_gun_gu),
+            "dong": norm(dong),
+            "jibun": norm(jibun),
+            "trade_year": trade_year,
+            "sido": sido["NAME"],
+            "sigungu": sigungu["NAME"],
+            "dongri": dongri["NAME"],
+            "san": san,
+            "bun1": bun1,
+            "bun2": bun2,
+        },
+        "source_url": "https://www.realtyprice.kr/notice/m/gsi/search.do",
+        "request_url": f"https://www.realtyprice.kr/notice/m/gsi/getList.do?{urllib.parse.urlencode(params)}",
     }, "조회완료"
+
+
+def crawl_detail(crawled, fallback_status):
+    if not crawled:
+        return fallback_status
+    query = crawled.get("query", {})
+    price = crawled.get("price")
+    price_text = f"{price:,}원" if isinstance(price, (int, float)) else norm(price)
+    trade_year = query.get("trade_year") or "거래시점 연도 미확인"
+    notice = crawled.get("notice_ymd") or "고시일 미확인"
+    address = crawled.get("address") or f"{query.get('si_gun_gu', '')} {query.get('dong', '')} {query.get('jibun', '')}".strip()
+    return (
+        f"realtyprice.kr 모바일 개별공시지가 조회: "
+        f"{query.get('si_gun_gu', '')} {query.get('dong', '')} {query.get('jibun', '')} "
+        f"(법정동코드 {query.get('sido', '')}/{query.get('sigungu', '')}/{query.get('dongri', '')}, "
+        f"산구분 {query.get('san', '')}, 본번 {query.get('bun1', '')}, 부번 {query.get('bun2', '')})로 검색. "
+        f"거래시점 {trade_year}년 기준으로 {crawled.get('base_year')}년 공시지가 {price_text} 선택. "
+        f"검색결과 {crawled.get('rows')}건, 고시일 {notice}, 조회주소 {address}. "
+        f"원본URL {crawled.get('source_url')} / 요청URL {crawled.get('request_url')}"
+    )
 
 
 def abbreviation(zone):
@@ -228,7 +265,7 @@ def classify_review(ws, row):
 
 
 def copy_widths(src, dst):
-    widths = [8, 14, 12, 12, 10, 8, 12, 12, 12, 10, 9, 16, 14, 14, 10, 10, 12, 10, 18]
+    widths = [8, 14, 14, 12, 10, 8, 12, 12, 12, 10, 9, 16, 14, 14, 10, 10, 12, 10, 48, 72]
     for idx, width in enumerate(widths, start=1):
         dst.column_dimensions[get_column_letter(idx)].width = width
 
@@ -275,8 +312,8 @@ def clone_visible_workbook(wb_values):
             for cell in row:
                 dst_cell = dst[cell.coordinate]
                 dst_cell.value = cell.value
+                dst_cell.font = copy(DEFAULT_FONT)
                 if cell.has_style:
-                    dst_cell.font = copy(cell.font)
                     dst_cell.fill = copy(cell.fill)
                     dst_cell.border = copy(cell.border)
                     dst_cell.alignment = copy(cell.alignment)
@@ -305,27 +342,18 @@ def build(input_path, output_path, summary_path):
         del wb["자동정리"]
     ws = wb.create_sheet("자동정리")
 
-    title_fill = PatternFill("solid", fgColor="12343B")
     head_fill = PatternFill("solid", fgColor="D9E8E6")
     thin = Side(style="thin", color="C9D4D1")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    ws["A1"] = "토지 거래 자동 정리"
-    ws["A1"].font = Font(size=15, bold=True, color="FFFFFF")
-    ws["A1"].fill = title_fill
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(HEADERS))
-    ws["A2"] = "원본 탭 기준 자동 추출 + realtyprice.kr 개별공시지가 조회 보강"
-    ws["A2"].font = Font(color="5C6B70")
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(HEADERS))
-
     for col, header in enumerate(HEADERS, 1):
-        cell = ws.cell(4, col, header)
+        cell = ws.cell(1, col, header)
         cell.fill = head_fill
-        cell.font = Font(bold=True)
+        cell.font = copy(HEADER_FONT)
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = border
     copy_widths(src_values, ws)
-    ws.freeze_panes = "A5"
+    ws.freeze_panes = "A2"
 
     preview = []
     warnings = []
@@ -338,10 +366,13 @@ def build(input_path, output_path, summary_path):
         si_gun_gu = src_values.cell(row, 3).value
         dong = src_values.cell(row, 4).value
         jibun = src_values.cell(row, 5).value
+        jibun_text = norm(jibun)
         trade_date = src_values.cell(row, 9).value
         land_area = src_values.cell(land_row, 10).value
         official_price = src_values.cell(row, 26).value
         crawl_status = "원본 공시지가 사용"
+        crawl_url = ""
+        official_price_from_crawl = False
 
         crawled = None
         if official_price in (None, ""):
@@ -350,6 +381,9 @@ def build(input_path, output_path, summary_path):
                 crawled, crawl_status = crawl_price(si_gun_gu, dong, jibun, trade_date)
                 if crawled and crawled.get("price"):
                     official_price = crawled["price"]
+                    official_price_from_crawl = True
+                    crawl_status = crawl_detail(crawled, crawl_status)
+                    crawl_url = crawled.get("request_url", "")
             except Exception as exc:
                 crawl_status = f"조회실패: {exc}"
                 warnings.append(f"{norm(dong)} {norm(jibun)} - {crawl_status}")
@@ -358,7 +392,8 @@ def build(input_path, output_path, summary_path):
                 log(f"{idx}/{len(rows)} {norm(dong)} {norm(jibun)} 공시지가 검증 조회 중입니다.")
                 crawled, status = crawl_price(si_gun_gu, dong, jibun, trade_date)
                 if crawled and crawled.get("price"):
-                    crawl_status = f"조회완료 {crawled.get('base_year')}년 {crawled.get('price'):,}"
+                    crawl_status = crawl_detail(crawled, status)
+                    crawl_url = crawled.get("request_url", "")
                 else:
                     crawl_status = status
             except Exception as exc:
@@ -375,7 +410,7 @@ def build(input_path, output_path, summary_path):
         record = [
             source_no,
             dong,
-            jibun,
+            jibun_text,
             trade_date,
             land_area,
             src_values.cell(row, 7).value,
@@ -392,24 +427,33 @@ def build(input_path, output_path, summary_path):
             "",
             "",
             crawl_status,
+            crawl_url,
         ]
-        out_row = idx + 4
+        out_row = idx + 1
+        ws.row_dimensions[out_row].height = 60
         for col, value in enumerate(record, start=1):
             cell = ws.cell(out_row, col, value)
+            cell.font = copy(DEFAULT_FONT)
             cell.border = border
-            cell.alignment = Alignment(vertical="center")
+            cell.alignment = Alignment(vertical="center", horizontal="left" if col in (3, 19, 20) else None, wrap_text=col in (19, 20))
             if isinstance(value, datetime):
                 cell.number_format = "yyyy-mm-dd"
+            if col == 3:
+                cell.number_format = "@"
             if col in (12, 13, 14):
                 cell.number_format = "#,##0"
             if col == 15:
                 cell.number_format = "0.0000"
+            if crawled and col in (19, 20):
+                cell.font = copy(CRAWLED_FONT)
+            if official_price_from_crawl and col == 14:
+                cell.font = copy(CRAWLED_FONT)
         preview.append({HEADERS[i]: record[i] for i in range(len(HEADERS))})
 
-    for row in ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=len(HEADERS)):
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=len(HEADERS)):
         for cell in row:
             cell.border = border
-    ws.auto_filter.ref = f"A4:{get_column_letter(len(HEADERS))}{ws.max_row}"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(HEADERS))}{ws.max_row}"
 
     log("엑셀 파일을 저장하는 중입니다.")
     wb.save(output_path)
