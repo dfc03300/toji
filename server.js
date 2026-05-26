@@ -15,8 +15,13 @@ const OUTPUTS = path.join(ROOT, "outputs");
 const PYTHON = process.env.PYTHON_EXE || (process.platform === "win32"
   ? "C:\\Users\\daekyo\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe"
   : "python3");
+const MS_CLIENT_ID = process.env.MS_CLIENT_ID || "";
+const MS_CLIENT_SECRET = process.env.MS_CLIENT_SECRET || "";
+const MS_TENANT_ID = process.env.MS_TENANT_ID || "common";
+const MS_SCOPES = "offline_access User.Read Files.ReadWrite";
 
 const jobs = new Map();
+const authStates = new Map();
 
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -38,10 +43,43 @@ function contentType(file) {
   }[ext] || "application/octet-stream";
 }
 
+function base64Url(buffer) {
+  return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function publicBaseUrl(req) {
+  const proto = req.headers["x-forwarded-proto"] || "http";
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  return process.env.PUBLIC_BASE_URL || `${proto}://${host}`;
+}
+
+function microsoftRedirectUri(req) {
+  return `${publicBaseUrl(req)}/auth/microsoft/callback`;
+}
+
+function microsoftConfigured(req) {
+  return {
+    enabled: Boolean(MS_CLIENT_ID),
+    clientId: MS_CLIENT_ID,
+    tenantId: MS_TENANT_ID,
+    redirectUri: microsoftRedirectUri(req),
+    scopes: MS_SCOPES
+  };
+}
+
 async function readBody(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   return Buffer.concat(chunks);
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return { error: text };
+  }
 }
 
 function parseMultipart(buffer, contentTypeHeader) {
@@ -214,6 +252,123 @@ async function download(req, res, id) {
   fs.createReadStream(job.output).pipe(res);
 }
 
+async function m365Status(req, res) {
+  sendJson(res, 200, microsoftConfigured(req));
+}
+
+async function m365Start(req, res, id) {
+  if (!MS_CLIENT_ID) {
+    sendJson(res, 400, {
+      error: "M365 연동을 사용하려면 Render 환경변수 MS_CLIENT_ID를 먼저 설정해야 합니다.",
+      redirectUri: microsoftRedirectUri(req)
+    });
+    return;
+  }
+  const job = jobs.get(id);
+  if (!job || job.status !== "done") {
+    sendJson(res, 404, { error: "먼저 엑셀 처리를 완료한 뒤 Office 365 편집을 실행해 주세요." });
+    return;
+  }
+
+  const state = crypto.randomBytes(18).toString("hex");
+  const codeVerifier = base64Url(crypto.randomBytes(32));
+  const codeChallenge = base64Url(crypto.createHash("sha256").update(codeVerifier).digest());
+  authStates.set(state, {
+    jobId: id,
+    codeVerifier,
+    redirectUri: microsoftRedirectUri(req),
+    createdAt: Date.now()
+  });
+
+  const authUrl = new URL(`https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/authorize`);
+  authUrl.searchParams.set("client_id", MS_CLIENT_ID);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("redirect_uri", microsoftRedirectUri(req));
+  authUrl.searchParams.set("response_mode", "query");
+  authUrl.searchParams.set("scope", MS_SCOPES);
+  authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("code_challenge", codeChallenge);
+  authUrl.searchParams.set("code_challenge_method", "S256");
+  res.writeHead(302, { Location: authUrl.toString() });
+  res.end();
+}
+
+async function exchangeMicrosoftToken(code, authState) {
+  const params = new URLSearchParams({
+    client_id: MS_CLIENT_ID,
+    scope: MS_SCOPES,
+    code,
+    redirect_uri: authState.redirectUri,
+    grant_type: "authorization_code",
+    code_verifier: authState.codeVerifier
+  });
+  if (MS_CLIENT_SECRET) params.set("client_secret", MS_CLIENT_SECRET);
+
+  const response = await fetch(`https://login.microsoftonline.com/${MS_TENANT_ID}/oauth2/v2.0/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params
+  });
+  const data = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(data.error_description || data.error || "Microsoft 토큰 발급에 실패했습니다.");
+  }
+  return data.access_token;
+}
+
+async function uploadToOneDrive(accessToken, filePath, fileName) {
+  const buffer = await fsp.readFile(filePath);
+  const graphPath = encodeURIComponent(fileName);
+  const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${graphPath}:/content`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": contentType(filePath)
+    },
+    body: buffer
+  });
+  const data = await readJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(data.error?.message || data.error || "OneDrive 업로드에 실패했습니다.");
+  }
+  return data;
+}
+
+async function microsoftCallback(req, res, url) {
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const error = url.searchParams.get("error");
+  if (error) {
+    sendJson(res, 400, { error, description: url.searchParams.get("error_description") });
+    return;
+  }
+  const authState = authStates.get(state);
+  authStates.delete(state);
+  if (!code || !authState) {
+    sendJson(res, 400, { error: "Microsoft 로그인 상태값을 확인하지 못했습니다. 다시 시도해 주세요." });
+    return;
+  }
+  if (Date.now() - authState.createdAt > 10 * 60 * 1000) {
+    sendJson(res, 400, { error: "Microsoft 로그인 시간이 만료되었습니다. 다시 시도해 주세요." });
+    return;
+  }
+
+  const job = jobs.get(authState.jobId);
+  if (!job || job.status !== "done") {
+    sendJson(res, 404, { error: "업로드할 완료 파일을 찾지 못했습니다." });
+    return;
+  }
+
+  try {
+    const accessToken = await exchangeMicrosoftToken(code, authState);
+    const item = await uploadToOneDrive(accessToken, job.output, job.savedFileName || path.basename(job.output));
+    res.writeHead(302, { Location: item.webUrl || publicBaseUrl(req) });
+    res.end();
+  } catch (err) {
+    sendJson(res, 500, { error: err.message });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -225,6 +380,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/process") return startJob(req, res);
     if (req.method === "GET" && url.pathname.startsWith("/api/job/")) return handleJob(req, res, url.pathname.split("/").pop());
     if (req.method === "GET" && url.pathname.startsWith("/api/download/")) return download(req, res, url.pathname.split("/").pop());
+    if (req.method === "GET" && url.pathname === "/api/m365/status") return m365Status(req, res);
+    if (req.method === "GET" && url.pathname.startsWith("/api/m365/start/")) return m365Start(req, res, url.pathname.split("/").pop());
+    if (req.method === "GET" && url.pathname === "/auth/microsoft/callback") return microsoftCallback(req, res, url);
     return serveStatic(req, res);
   } catch (error) {
     sendJson(res, 500, { error: error.message });

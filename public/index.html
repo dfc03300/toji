@@ -9,92 +9,62 @@
   <body>
     <main class="app-shell">
       <aside class="sidebar">
-        <div class="brand">
-          <span class="brand-mark">토</span>
+        <h1>토지거래 정리</h1>
+
+        <label class="file-row" id="dropzone">
+          <span>파일</span>
+          <input id="fileInput" type="file" accept=".xlsx" />
+          <strong id="fileName">선택 안 됨</strong>
+          <small id="fileMeta">클릭해서 .xlsx 선택</small>
+        </label>
+
+        <button class="text-button primary" id="processBtn" disabled>정리 시작</button>
+        <a class="text-button disabled" id="downloadBtn" href="#" download>엑셀 다운로드</a>
+        <button class="text-button" type="button" id="officeBtn">Office 365에서 편집</button>
+        <button class="text-button" type="button" id="devViewBtn">개발중 서비스 보기</button>
+
+        <dl class="meta-list">
           <div>
-            <strong>toji</strong>
-            <small>토지거래 정리</small>
+            <dt>상태</dt>
+            <dd id="serverStatus">대기</dd>
           </div>
-        </div>
-
-        <nav class="nav">
-          <a class="active" href="#work">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4z"></path><path d="M8 9h8"></path><path d="M8 13h5"></path></svg>
-            작업
-          </a>
-          <a href="#logs">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path></svg>
-            로그
-          </a>
-          <a href="#preview">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18"></path><path d="M3 12h18"></path><path d="M3 19h18"></path><path d="M8 5v14"></path></svg>
-            데이터
-          </a>
-        </nav>
-
-        <section class="control-panel" id="work">
-          <label class="upload-button" id="dropzone">
-            <input id="fileInput" type="file" accept=".xlsx" />
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"></path><path d="M14 2v5h5"></path><path d="M12 11v6"></path><path d="m9 14 3-3 3 3"></path></svg>
-            <span id="fileName">엑셀 업로드</span>
-            <small id="fileMeta">.xlsx</small>
-          </label>
-
-          <button class="primary" id="processBtn" disabled>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>
-            정리 시작
-          </button>
-
-          <a class="download disabled" id="downloadBtn" href="#" download>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
-            다운로드
-          </a>
-        </section>
-
-        <section class="status-card">
-          <div class="status-row">
-            <span>상태</span>
-            <strong id="serverStatus">대기</strong>
+          <div>
+            <dt>단계</dt>
+            <dd id="steps">
+              <span class="active">업로드</span>
+              <span>분석</span>
+              <span>조회</span>
+              <span>저장</span>
+            </dd>
           </div>
-          <div class="steps" id="steps">
-            <span class="active">업로드</span>
-            <span>분석</span>
-            <span>조회</span>
-            <span>저장</span>
+          <div>
+            <dt>저장</dt>
+            <dd id="savePath">완료 후 표시</dd>
           </div>
-        </section>
-
-        <div class="save-path" id="savePath">저장 위치는 완료 후 표시됩니다.</div>
+        </dl>
       </aside>
 
-      <section class="workspace">
+      <section class="workspace" id="mainView">
         <header class="topbar">
           <div>
-            <h1>토지거래 정리</h1>
-            <p id="summaryText">원본 엑셀을 업로드하면 자동정리 탭을 생성합니다.</p>
+            <strong id="sheetName">자동정리</strong>
+            <span id="summaryText">원본 엑셀을 업로드하면 결과가 표시됩니다.</span>
           </div>
-          <div class="top-actions">
-            <span class="sheet-name" id="sheetName">자동정리</span>
-            <button class="secondary" type="button" id="officeBtn">Office 365</button>
-          </div>
+          <span id="rowCount">0 rows</span>
         </header>
 
-        <section class="log-panel" id="logs">
-          <div class="log-toolbar">
-            <button class="log-filter" type="button">All logs</button>
-            <div class="log-search">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
-              <input id="logSearch" type="search" placeholder="Search logs" />
-            </div>
-            <span class="log-window">Live tail</span>
+        <section class="log-area">
+          <div class="section-header">
+            <strong>처리 로그</strong>
+            <input id="logSearch" type="search" placeholder="로그 검색" />
           </div>
           <div class="log-stream" id="logStream" aria-live="polite"></div>
         </section>
 
-        <section class="data-card" id="preview">
-          <div class="data-title">
+        <section class="data-area">
+          <div class="section-header">
             <strong>데이터 미리보기</strong>
-            <span id="rowCount">0 rows</span>
+            <span class="legend"><b>붉은색 텍스트</b> = API로 가져온 정보</span>
           </div>
           <div class="viewer">
             <table class="sheet-grid">
@@ -103,10 +73,117 @@
               </thead>
               <tbody id="previewBody">
                 <tr>
-                  <td class="empty" colspan="21">업로드 후 결과 미리보기가 표시됩니다.</td>
+                  <td class="empty" colspan="19">업로드 후 결과 미리보기가 표시됩니다.</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="workspace dev-workspace hidden" id="devView">
+        <header class="topbar">
+          <div>
+            <strong>개발중 서비스</strong>
+            <span>KAIS 원본 거래자료를 손실 없이 정리하고 평가용으로 판정하는 확장 화면입니다.</span>
+          </div>
+          <button class="plain-button" type="button" id="backToMainBtn">기존 화면으로</button>
+        </header>
+
+        <section class="dev-panel">
+          <div class="section-header">
+            <strong>서비스 방향</strong>
+          </div>
+          <div class="dev-grid">
+            <article>
+              <h2>1. 원본 거래목록 보존</h2>
+              <p>KAIS에서 내려받은 목록 컬럼을 누락 없이 보존합니다. 금액, 면적, 권리, 건물, 지분 정보를 임의로 합치지 않습니다.</p>
+              <ul>
+                <li>시군구, 소재지, 지번, 계약일자</li>
+                <li>단가, 물건총금액, 총금액</li>
+                <li>토지계약면적, 건물계약면적</li>
+                <li>거래구분, 직거래구분, 권리구분</li>
+              </ul>
+            </article>
+
+            <article>
+              <h2>2. 상세정보 붙여넣기</h2>
+              <p>상세정보 창의 현재데이터 복사 내용을 붙여넣으면 토지/건물별 상세 행으로 분리합니다.</p>
+              <ul>
+                <li>상세물건번호, 상세물건구분</li>
+                <li>지목, 용도지역, 물건구분</li>
+                <li>전체면적, 전용면적, 물건금액</li>
+                <li>계약조건 및 기타 문장</li>
+              </ul>
+            </article>
+
+            <article>
+              <h2>3. 자동 판정</h2>
+              <p>원본 목록과 상세정보를 매칭해서 평가 검토용 판정 컬럼을 만듭니다.</p>
+              <ul>
+                <li>토지만</li>
+                <li>토지건물</li>
+                <li>집합건물</li>
+                <li>지분거래</li>
+                <li>확인필요</li>
+              </ul>
+            </article>
+
+            <article>
+              <h2>4. 결과 탭 구성</h2>
+              <p>자동정리 하나로 끝내지 않고, 근거를 추적할 수 있는 탭을 함께 만듭니다.</p>
+              <ul>
+                <li>원본_거래목록</li>
+                <li>자동정리</li>
+                <li>물건상세</li>
+                <li>매매및지분</li>
+                <li>계약조건</li>
+                <li>크롤링조회</li>
+                <li>검토결과</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="dev-panel">
+          <div class="section-header">
+            <strong>상세정보 붙여넣기 초안</strong>
+          </div>
+          <div class="paste-layout">
+            <textarea id="detailPaste" placeholder="KAIS 상세정보 창에서 현재데이터 복사 후 여기에 붙여넣는 영역입니다."></textarea>
+            <div class="parse-preview">
+              <strong>예상 파싱 결과</strong>
+              <table>
+                <thead>
+                  <tr>
+                    <th>구분</th>
+                    <th>매칭 기준</th>
+                    <th>생성 탭</th>
+                    <th>상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>상세물건정보</td>
+                    <td>소재지 + 지번 + 계약일자 + 금액</td>
+                    <td>물건상세</td>
+                    <td>개발 예정</td>
+                  </tr>
+                  <tr>
+                    <td>매매 및 지분</td>
+                    <td>상세물건번호</td>
+                    <td>매매및지분</td>
+                    <td>개발 예정</td>
+                  </tr>
+                  <tr>
+                    <td>계약조건</td>
+                    <td>거래 건 단위</td>
+                    <td>계약조건</td>
+                    <td>개발 예정</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
       </section>

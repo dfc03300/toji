@@ -36,3 +36,30 @@ http://127.0.0.1:5180
 ## 참고
 
 원본 엑셀에 포함된 외부 링크와 도형 파트는 Excel 복구 팝업을 피하기 위해 결과 저장 시 제거합니다.
+
+## Microsoft 365 웹 편집 설정
+
+Office 365 버튼은 처리 완료된 엑셀 파일을 OneDrive에 업로드한 뒤 Excel Online 편집 URL로 이동합니다. 사용하려면 Microsoft Entra ID 앱 등록이 필요합니다.
+
+Render 환경변수:
+
+```text
+MS_CLIENT_ID=Azure 앱 등록의 Application client ID
+MS_CLIENT_SECRET=선택 사항. Confidential client로 쓸 때만 입력
+MS_TENANT_ID=common 또는 테넌트 ID
+PUBLIC_BASE_URL=https://toji-hwux.onrender.com
+```
+
+Azure 앱 등록의 Redirect URI:
+
+```text
+https://toji-hwux.onrender.com/auth/microsoft/callback
+```
+
+필요 권한:
+
+```text
+User.Read
+Files.ReadWrite
+offline_access
+```

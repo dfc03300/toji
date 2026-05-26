@@ -17,8 +17,7 @@ const headers = [
   "검토",
   "시점수정치",
   "시점수정",
-  "크롤링상세",
-  "크롤링URL",
+  "크롤링상태",
 ];
 
 const columnLetters = ["", ...Array.from({ length: headers.length }, (_, index) => {
@@ -37,6 +36,7 @@ const state = {
   timer: null,
   lastProgress: "",
   logs: [],
+  currentJobId: null,
 };
 
 const els = {
@@ -54,6 +54,10 @@ const els = {
   summaryText: document.querySelector("#summaryText"),
   sheetName: document.querySelector("#sheetName"),
   officeBtn: document.querySelector("#officeBtn"),
+  devViewBtn: document.querySelector("#devViewBtn"),
+  backToMainBtn: document.querySelector("#backToMainBtn"),
+  mainView: document.querySelector("#mainView"),
+  devView: document.querySelector("#devView"),
   logStream: document.querySelector("#logStream"),
   logSearch: document.querySelector("#logSearch"),
   rowCount: document.querySelector("#rowCount"),
@@ -146,8 +150,8 @@ function valueText(value) {
 }
 
 function isCrawledCell(header, row) {
-  if (header === "크롤링상세" || header === "크롤링URL") return Boolean(row[header]);
-  if (header === "개별공시지가") return /공시지가 .*선택|조회주소|요청URL/.test(String(row["크롤링상세"] || ""));
+  if (header === "크롤링상태") return Boolean(row[header]) && !String(row[header]).startsWith("원본");
+  if (header === "개별공시지가") return /^조회완료/.test(String(row["크롤링상태"] || ""));
   return false;
 }
 
@@ -197,6 +201,7 @@ async function poll(jobId) {
     els.serverStatus.textContent = "완료";
     els.downloadBtn.href = job.downloadUrl;
     els.downloadBtn.classList.remove("disabled");
+    state.currentJobId = job.id;
     els.savePath.textContent = job.savedPath ? `저장됨: ${job.savedPath}` : "저장 위치를 확인하지 못했습니다.";
     els.summaryText.textContent = `${job.caseCount || 0}건을 자동정리 탭에 작성했습니다.`;
     els.sheetName.textContent = job.sheetName || "자동정리";
@@ -243,10 +248,36 @@ els.processBtn.addEventListener("click", () => startProcess().catch((error) => {
 }));
 
 els.officeBtn.addEventListener("click", () => {
-  addLog("Office 365 편집 연동은 Microsoft 로그인, OneDrive 업로드, Graph API 연결이 필요합니다.");
+  openOfficeEditor().catch((error) => addLog(error.message, "error"));
 });
 
+async function openOfficeEditor() {
+  if (!state.currentJobId) {
+    addLog("먼저 엑셀 처리를 완료해야 Office 365 편집을 열 수 있습니다.", "error");
+    return;
+  }
+  const response = await fetch("/api/m365/status");
+  const config = await response.json();
+  if (!config.enabled) {
+    addLog("M365 연동 설정이 없습니다. Render 환경변수 MS_CLIENT_ID를 설정하고 Azure 앱 Redirect URI에 아래 주소를 등록해야 합니다.", "error");
+    addLog(`Redirect URI: ${config.redirectUri}`);
+    return;
+  }
+  addLog("Microsoft 로그인으로 이동합니다. 로그인 후 OneDrive에 업로드하고 Excel Online 편집 화면을 엽니다.");
+  window.location.href = `/api/m365/start/${state.currentJobId}`;
+}
+
 els.logSearch.addEventListener("input", renderLogs);
+
+els.devViewBtn.addEventListener("click", () => {
+  els.mainView.classList.add("hidden");
+  els.devView.classList.remove("hidden");
+});
+
+els.backToMainBtn.addEventListener("click", () => {
+  els.devView.classList.add("hidden");
+  els.mainView.classList.remove("hidden");
+});
 
 ["dragenter", "dragover"].forEach((eventName) => {
   els.dropzone.addEventListener(eventName, (event) => {
