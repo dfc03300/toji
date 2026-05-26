@@ -246,18 +246,51 @@ def strip_excel_repair_triggers(wb):
             sheet.legacy_drawing = None
 
 
-def freeze_formulas(wb, wb_values):
-    """Replace original workbook formulas with cached values for clean Excel editing."""
-    value_sheets = {sheet.title: sheet for sheet in wb_values.worksheets}
-    for sheet in wb.worksheets:
-        value_sheet = value_sheets.get(sheet.title)
-        if not value_sheet:
+def clone_visible_workbook(wb_values):
+    """Create a clean workbook from visible values/styles, leaving broken XML behind."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    for src in wb_values.worksheets:
+        if src.title == "자동정리":
             continue
-        for row in sheet.iter_rows():
+        dst = wb.create_sheet(src.title)
+        dst.freeze_panes = src.freeze_panes
+        dst.sheet_view.showGridLines = src.sheet_view.showGridLines
+        if src.auto_filter and src.auto_filter.ref:
+            dst.auto_filter.ref = src.auto_filter.ref
+
+        for key, dim in src.column_dimensions.items():
+            target = dst.column_dimensions[key]
+            target.width = dim.width
+            target.hidden = dim.hidden
+            target.bestFit = dim.bestFit
+
+        for idx, dim in src.row_dimensions.items():
+            target = dst.row_dimensions[idx]
+            target.height = dim.height
+            target.hidden = dim.hidden
+
+        for row in src.iter_rows():
             for cell in row:
-                value = cell.value
-                if isinstance(value, str) and value.startswith("="):
-                    cell.value = value_sheet[cell.coordinate].value
+                dst_cell = dst[cell.coordinate]
+                dst_cell.value = cell.value
+                if cell.has_style:
+                    dst_cell.font = copy(cell.font)
+                    dst_cell.fill = copy(cell.fill)
+                    dst_cell.border = copy(cell.border)
+                    dst_cell.alignment = copy(cell.alignment)
+                    dst_cell.number_format = cell.number_format
+                    dst_cell.protection = copy(cell.protection)
+                if cell.comment:
+                    dst_cell.comment = copy(cell.comment)
+                if cell.hyperlink:
+                    dst_cell.hyperlink = copy(cell.hyperlink)
+
+        for merged_range in src.merged_cells.ranges:
+            dst.merge_cells(str(merged_range))
+
+    return wb
 
 
 def build(input_path, output_path, summary_path):
@@ -266,9 +299,8 @@ def build(input_path, output_path, summary_path):
     log("원본 엑셀을 읽는 중입니다.")
     wb_values = openpyxl.load_workbook(input_path, data_only=True)
     src_values = wb_values.worksheets[0]
-    wb = openpyxl.load_workbook(input_path)
+    wb = clone_visible_workbook(wb_values)
     strip_excel_repair_triggers(wb)
-    freeze_formulas(wb, wb_values)
     if "자동정리" in wb.sheetnames:
         del wb["자동정리"]
     ws = wb.create_sheet("자동정리")
