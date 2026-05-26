@@ -45,6 +45,8 @@ const historyDbName = "tojiWorksHistory";
 const historyFileStore = "files";
 
 const els = {
+  appShell: document.querySelector("#appShell"),
+  sidebarToggleBtn: document.querySelector("#sidebarToggleBtn"),
   dropzone: document.querySelector("#dropzone"),
   fileInput: document.querySelector("#fileInput"),
   fileName: document.querySelector("#fileName"),
@@ -99,6 +101,18 @@ const els = {
 const historyPageSize = 10;
 let gsiSuggestTimer = null;
 let selectedGsiSuggestion = null;
+
+function setSidebarCollapsed(collapsed) {
+  els.appShell?.classList.toggle("sidebar-collapsed", collapsed);
+  if (els.sidebarToggleBtn) {
+    els.sidebarToggleBtn.textContent = collapsed ? "›" : "‹";
+    els.sidebarToggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    els.sidebarToggleBtn.setAttribute("aria-label", collapsed ? "사이드바 펼치기" : "사이드바 접기");
+  }
+  localStorage.setItem("tojiWorksSidebarCollapsed", collapsed ? "1" : "0");
+}
+
+setSidebarCollapsed(localStorage.getItem("tojiWorksSidebarCollapsed") === "1");
 
 function nowTime() {
   return new Intl.DateTimeFormat("ko-KR", {
@@ -1027,6 +1041,10 @@ els.clearRequestsBtn.addEventListener("click", () => {
 });
 
 els.dropzone.addEventListener("drop", (event) => chooseFile(event.dataTransfer.files[0]).catch((error) => addLog(error.message, "error")));
+
+els.sidebarToggleBtn?.addEventListener("click", () => {
+  setSidebarCollapsed(!els.appShell?.classList.contains("sidebar-collapsed"));
+});
 
 const COL_UNIT_PRICE = headers.indexOf("단가(원/㎡)");
 const COL_TIME_RATE = headers.indexOf("시점수정치");
