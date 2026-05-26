@@ -33,6 +33,9 @@ function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
     "Content-Length": Buffer.byteLength(body)
   });
   res.end(body);
@@ -98,7 +101,9 @@ async function postFormJson(url, params) {
     headers: {
       "User-Agent": "Mozilla/5.0",
       "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-      "X-Requested-With": "XMLHttpRequest"
+      "X-Requested-With": "XMLHttpRequest",
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache"
     },
     body: new URLSearchParams(params)
   });
@@ -473,11 +478,15 @@ async function microsoftCallback(req, res, url) {
 
 async function verifyGsi(req, res, url) {
   const params = Object.fromEntries(url.searchParams.entries());
+  const fetchedAt = new Date().toISOString();
   try {
     const enrichedParams = await enrichGsiParams(params);
     const data = await postFormJson("https://www.realtyprice.kr/notice/m/gsi/getList.do", enrichedParams);
     sendJson(res, 200, {
       source: "realtyprice.kr",
+      freshness: "real-time",
+      fetchedAt,
+      notice: "캐시를 사용하지 않고 realtyprice.kr API에서 실시간으로 조회한 값입니다.",
       method: "POST",
       endpoint: "https://www.realtyprice.kr/notice/m/gsi/getList.do",
       searchPage: "https://www.realtyprice.kr/notice/m/gsi/search.do",
@@ -488,6 +497,8 @@ async function verifyGsi(req, res, url) {
   } catch (error) {
     sendJson(res, 502, {
       error: error.message,
+      freshness: "real-time",
+      fetchedAt,
       method: "POST",
       endpoint: "https://www.realtyprice.kr/notice/m/gsi/getList.do",
       searchPage: "https://www.realtyprice.kr/notice/m/gsi/search.do",

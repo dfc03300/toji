@@ -3,15 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>토지거래 정리</title>
+    <title>TojiWorks</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="app-shell">
       <aside class="sidebar">
-        <button class="brand-home" type="button" id="brandHomeBtn" aria-label="메인 화면으로">
-          <span class="toji-icon">T</span>
-          <strong>토지거래 정리</strong>
+        <button class="brand-home" type="button" id="brandHomeBtn" aria-label="TojiWorks 메인 화면으로">
+          <span class="toji-icon" aria-hidden="true">
+            <span></span>
+          </span>
+          <strong>TojiWorks</strong>
         </button>
 
         <label class="file-row" id="dropzone">
@@ -48,7 +50,10 @@
         <section class="data-area">
           <div class="section-header">
             <strong>데이터 미리보기</strong>
-            <span class="legend"><b>붉은색 텍스트</b> = API로 가져온 정보</span>
+            <div class="header-actions">
+              <button class="plain-button" type="button" id="gsiPopupBtn">공시지가 비교 검색</button>
+              <span class="legend"><b>붉은색 텍스트</b> = API로 가져온 정보</span>
+            </div>
           </div>
           <div class="viewer">
             <table class="sheet-grid">
@@ -64,6 +69,68 @@
           </div>
         </section>
       </section>
+
+      <dialog class="compare-dialog" id="gsiDialog">
+        <div class="dialog-head">
+          <strong>개별공시지가 비교 검색</strong>
+          <button class="plain-button" type="button" id="gsiDialogClose">닫기</button>
+        </div>
+        <div class="compare-grid">
+          <section class="compare-pane">
+            <div class="pane-head">
+              <strong>원본 페이지</strong>
+              <a href="https://www.realtyprice.kr/notice/m/gsi/search.do" target="_blank" rel="noreferrer">새 창 열기</a>
+            </div>
+            <iframe title="realtyprice.kr 원본 개별공시지가 검색" src="https://www.realtyprice.kr/notice/m/gsi/search.do"></iframe>
+          </section>
+          <section class="compare-pane">
+            <div class="pane-head">
+              <strong>TojiWorks 실시간 조회</strong>
+              <span>캐시 없이 realtyprice.kr API에서 최신값 조회</span>
+            </div>
+            <section class="gsi-search-panel" aria-label="개별공시지가 검색">
+              <form class="gsi-search-form" id="gsiSearchForm">
+                <label>
+                  <span>시도</span>
+                  <input name="sido_nm" placeholder="서울특별시" />
+                </label>
+                <label>
+                  <span>시군구</span>
+                  <input name="sigungu_nm" placeholder="은평구" />
+                </label>
+                <label>
+                  <span>읍면동</span>
+                  <input name="dongri_nm" placeholder="불광동" />
+                </label>
+                <label>
+                  <span>지번</span>
+                  <input name="jibun" placeholder="520 또는 산 205-31" />
+                </label>
+                <label>
+                  <span>기준연도</span>
+                  <input name="notice_year" placeholder="비워두면 전체" />
+                </label>
+                <button type="submit">조회</button>
+              </form>
+              <p class="gsi-source">
+                출처: realtyprice.kr 모바일 개별공시지가 조회 API · 캐시 없이 실시간 최신 조회
+                <span>https://www.realtyprice.kr/notice/m/gsi/getList.do</span>
+              </p>
+              <div class="gsi-result">
+                <div class="gsi-status" id="gsiSearchStatus">조회 대기</div>
+                <div class="viewer compact-viewer">
+                  <table class="sheet-grid gsi-grid">
+                    <thead id="gsiResultHead"></thead>
+                    <tbody id="gsiResultBody">
+                      <tr><td class="empty">주소를 입력하면 조회 결과가 표시됩니다.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          </section>
+        </div>
+      </dialog>
 
       <section class="workspace dev-workspace hidden" id="devView">
         <header class="topbar">
@@ -152,19 +219,26 @@
         <section class="history-panel">
           <div class="history-toolbar">
             <label class="history-upload-button">
-              파일 업로드
+              작업 파일 미리 업로드
               <input type="file" id="historyUploadInput" accept=".xlsx" />
             </label>
-            <span>작업은 나중에 진행</span>
+            <label class="history-filter-label">
+              <input type="checkbox" id="historyHidePending" />
+              분석 완료만 보기
+            </label>
+            <span class="history-count" id="historyCount">총 0개</span>
           </div>
           <div class="history-table-head">
-            <span>업로드 파일</span>
-            <span>버전</span>
+            <span>번호</span>
             <span>작업일시</span>
-            <span>다운로드 파일</span>
-            <span>다운로드</span>
+            <span>업로드 파일</span>
+            <span>분석 상태</span>
+            <span>버전</span>
+            <span>분석 전</span>
+            <span>분석 후</span>
           </div>
           <div class="history-list" id="historyList"></div>
+          <div class="history-pagination" id="historyPagination"></div>
         </section>
       </section>
     </main>

@@ -2,8 +2,10 @@ import json
 import os
 import re
 import sys
+import threading
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from datetime import datetime
 from pathlib import Path
@@ -43,13 +45,17 @@ SIDO_CACHE = {}
 SIGUNGU_CACHE = {}
 DONGRI_CACHE = {}
 
+MAX_CRAWL_WORKERS = 6
+_log_lock = threading.Lock()
+
 
 def public_base_url():
     return os.environ.get("PUBLIC_BASE_URL", "http://127.0.0.1:5180").rstrip("/")
 
 
 def log(message):
-    print(message, flush=True)
+    with _log_lock:
+        print(message, flush=True)
 
 
 def norm(value):
@@ -98,6 +104,8 @@ def post_json(path, params):
             "User-Agent": "Mozilla/5.0",
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             "X-Requested-With": "XMLHttpRequest",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
         },
         method="POST",
     )
@@ -175,6 +183,7 @@ def crawl_price(si_gun_gu, dong, jibun, trade_date):
         "build_bun2": "00000",
     }
     rows = get_list("/notice/m/gsi/getList.do", params)
+    fetched_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if not rows:
         return None, "조회결과 없음"
 
@@ -207,6 +216,8 @@ def crawl_price(si_gun_gu, dong, jibun, trade_date):
         "api_endpoint": "https://www.realtyprice.kr/notice/m/gsi/getList.do",
         "request_params": json.dumps(params, ensure_ascii=False, sort_keys=True),
         "verify_url": f"{public_base_url()}/verify.html?{urllib.parse.urlencode(params)}",
+        "fetched_at": fetched_at,
+        "freshness": "실시간 최신 조회",
     }, "조회완료"
 
 
@@ -217,7 +228,8 @@ def crawl_columns(crawled, status):
     price = crawled.get("price")
     price_text = f"{price:,}" if isinstance(price, (int, float)) else norm(price)
     return [
-        f"{status}: {query.get('si_gun_gu', '')} {query.get('dong', '')} {query.get('jibun', '')}, "
+        f"실시간 최신 조회({crawled.get('fetched_at', '')}) {status}: "
+        f"{query.get('si_gun_gu', '')} {query.get('dong', '')} {query.get('jibun', '')}, "
         f"{crawled.get('base_year', '')}년 {price_text}, 결과 {crawled.get('rows', '')}건"
     ]
 
@@ -233,6 +245,18 @@ def abbreviation(zone):
         "근린상업지역": "근상",
     }
     return mapping.get(text, text)
+
+
+def _crawl_task(task):
+    idx, total, si_gun_gu, dong, jibun, trade_date, has_price = task
+    verb = "검증 조회" if has_price else "조회"
+    log(f"{idx}/{total} {norm(dong)} {norm(jibun)} 공시지가 {verb} 중입니다.")
+    try:
+        crawled, status = crawl_price(si_gun_gu, dong, jibun, trade_date)
+        return idx, crawled, status
+    except Exception as exc:
+        prefix = "원본 유지, " if has_price else ""
+        return idx, None, f"{prefix}조회실패: {exc}"
 
 
 def find_land_row(ws, row):
@@ -361,60 +385,77 @@ def build(input_path, output_path, summary_path):
         cell.border = border
     copy_widths(src_values, ws)
     ws.freeze_panes = "A3"
-    ws["A1"] = "주석: 붉은색 텍스트는 realtyprice.kr API로 가져온 정보입니다."
+    ws["A1"] = "주석: 붉은색 텍스트는 realtyprice.kr API에서 캐시 없이 실시간 최신 조회로 가져온 정보입니다."
     ws["A1"].font = copy(CRAWLED_FONT)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(HEADERS))
 
-    preview = []
     warnings = []
     rows = selected_rows(src_values)
     log(f"선택 사례 {len(rows)}건을 정리하는 중입니다.")
 
+    # Phase 1: 원본 엑셀에서 모든 행 데이터 추출
+    rows_data = []
     for idx, row in enumerate(rows, start=1):
         land_row = find_land_row(src_values, row)
-        source_no = src_values.cell(row, 1).value
-        si_gun_gu = src_values.cell(row, 3).value
-        dong = src_values.cell(row, 4).value
-        jibun = src_values.cell(row, 5).value
-        jibun_text = display_jibun(jibun)
-        trade_date = src_values.cell(row, 9).value
-        land_area = src_values.cell(land_row, 10).value
-        official_price = src_values.cell(row, 26).value
-        crawl_status = "원본 공시지가 사용"
-        crawl_data = crawl_columns(None, crawl_status)
-        official_price_from_crawl = False
+        official_price_orig = src_values.cell(row, 26).value
+        rows_data.append({
+            "idx": idx,
+            "row": row,
+            "source_no": src_values.cell(row, 1).value,
+            "si_gun_gu": src_values.cell(row, 3).value,
+            "dong": src_values.cell(row, 4).value,
+            "jibun": src_values.cell(row, 5).value,
+            "trade_date": src_values.cell(row, 9).value,
+            "land_area": src_values.cell(land_row, 10).value,
+            "official_price_orig": official_price_orig,
+            "unit_price": src_values.cell(row, 16).value,
+            "public_ratio_orig": src_values.cell(row, 27).value,
+            "col7": src_values.cell(row, 7).value,
+            "col8": src_values.cell(row, 8).value,
+            "col12": src_values.cell(row, 12).value,
+            "col25": src_values.cell(row, 25).value,
+            "review": classify_review(src_values, row),
+            "has_price": official_price_orig not in (None, ""),
+        })
+
+    # Phase 2: 병렬 API 크롤링
+    tasks = [
+        (d["idx"], len(rows_data), d["si_gun_gu"], d["dong"],
+         d["jibun"], d["trade_date"], d["has_price"])
+        for d in rows_data
+    ]
+    crawl_results = {}
+    with ThreadPoolExecutor(max_workers=MAX_CRAWL_WORKERS) as executor:
+        for idx, crawled, status in executor.map(_crawl_task, tasks):
+            crawl_results[idx] = (crawled, status)
+
+    # Phase 3: 결과를 엑셀에 기록
+    preview = []
+    for d in rows_data:
+        idx = d["idx"]
+        crawled, crawl_status = crawl_results.get(idx, (None, "미조회"))
+
+        official_price = d["official_price_orig"]
         official_price_verified_by_api = False
 
-        crawled = None
-        if official_price in (None, ""):
-            try:
-                log(f"{idx}/{len(rows)} {norm(dong)} {norm(jibun)} 공시지가 조회 중입니다.")
-                crawled, crawl_status = crawl_price(si_gun_gu, dong, jibun, trade_date)
-                if crawled and crawled.get("price"):
-                    official_price = crawled["price"]
-                    official_price_from_crawl = True
-                    official_price_verified_by_api = True
-                    crawl_data = crawl_columns(crawled, crawl_status)
-            except Exception as exc:
-                crawl_status = f"조회실패: {exc}"
+        if not d["has_price"]:
+            if crawled and crawled.get("price"):
+                official_price = crawled["price"]
+                official_price_verified_by_api = True
+                crawl_data = crawl_columns(crawled, crawl_status)
+            else:
                 crawl_data = crawl_columns(None, crawl_status)
-                warnings.append(f"{norm(dong)} {norm(jibun)} - {crawl_status}")
+                if crawled is None and "조회실패" in crawl_status:
+                    warnings.append(f"{norm(d['dong'])} {norm(d['jibun'])} - {crawl_status}")
         else:
-            try:
-                log(f"{idx}/{len(rows)} {norm(dong)} {norm(jibun)} 공시지가 검증 조회 중입니다.")
-                crawled, status = crawl_price(si_gun_gu, dong, jibun, trade_date)
-                if crawled and crawled.get("price"):
-                    official_price_verified_by_api = True
-                    crawl_data = crawl_columns(crawled, status)
-                else:
-                    crawl_status = status
-                    crawl_data = crawl_columns(None, crawl_status)
-            except Exception as exc:
-                crawl_status = f"원본 유지, 조회실패: {exc}"
+            if crawled and crawled.get("price"):
+                official_price_verified_by_api = True
+                crawl_data = crawl_columns(crawled, crawl_status)
+            else:
                 crawl_data = crawl_columns(None, crawl_status)
 
-        unit_price = src_values.cell(row, 16).value
-        public_ratio = src_values.cell(row, 27).value
+        unit_price = d["unit_price"]
+        public_ratio = d["public_ratio_orig"]
         if public_ratio in (None, "") and unit_price not in (None, "") and official_price:
             try:
                 public_ratio = unit_price / official_price
@@ -422,22 +463,22 @@ def build(input_path, output_path, summary_path):
                 public_ratio = None
 
         record = [
-            source_no,
-            dong,
-            jibun_text,
-            trade_date,
-            land_area,
-            src_values.cell(row, 7).value,
-            abbreviation(src_values.cell(row, 8).value),
+            d["source_no"],
+            d["dong"],
+            display_jibun(d["jibun"]),
+            d["trade_date"],
+            d["land_area"],
+            d["col7"],
+            abbreviation(d["col8"]),
             "",
-            src_values.cell(row, 25).value,
+            d["col25"],
             "",
             "",
-            src_values.cell(row, 12).value,
+            d["col12"],
             unit_price,
             official_price,
             public_ratio,
-            classify_review(src_values, row),
+            d["review"],
             "",
             "",
             *crawl_data,

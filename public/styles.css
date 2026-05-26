@@ -41,6 +41,9 @@ input {
   border-right: 1px solid var(--line);
   padding: 14px 10px;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .brand-home {
@@ -52,28 +55,34 @@ input {
   color: var(--ink);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   cursor: pointer;
   text-align: left;
 }
 
 .brand-home strong {
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .toji-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
+  width: 25px;
+  height: 25px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
   display: inline-grid;
   place-items: center;
-  color: #fff;
-  font-weight: 900;
-  background:
-    radial-gradient(circle at 28% 25%, #b8c2ff 0 16%, transparent 17%),
-    linear-gradient(135deg, #6157ff 0%, #7b8dff 52%, #7dd3fc 100%);
-  box-shadow: inset 0 -2px 5px rgba(0, 0, 0, 0.16);
+  background: #fff;
+}
+
+.toji-icon span {
+  width: 11px;
+  height: 11px;
+  border-left: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  transform: rotate(-45deg) translate(1px, -1px);
 }
 
 .file-row {
@@ -169,6 +178,12 @@ input {
   border-color: #d1d5db;
 }
 
+.text-button.active {
+  background: #f5f5ff;
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
 .icon-button {
   width: 100%;
   height: 36px;
@@ -199,6 +214,7 @@ input {
   position: sticky;
   bottom: 0;
   background: #fff;
+  z-index: 1;
 }
 
 .meta-list {
@@ -291,6 +307,13 @@ input {
   background: #fff;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
 .legend {
   color: var(--muted);
   font-size: 12px;
@@ -351,6 +374,135 @@ input {
 .viewer {
   min-height: 0;
   overflow: auto;
+}
+
+.compare-dialog {
+  width: min(1500px, calc(100vw - 36px));
+  height: min(860px, calc(100vh - 36px));
+  padding: 0;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.compare-dialog::backdrop {
+  background: rgba(17, 24, 39, 0.25);
+}
+
+.dialog-head {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.compare-grid {
+  height: calc(100% - 42px);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.compare-pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  border-right: 1px solid var(--line);
+}
+
+.compare-pane:last-child {
+  border-right: 0;
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.pane-head span,
+.pane-head a {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compare-pane iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.gsi-search-panel {
+  padding: 10px 14px;
+  background: #fff;
+  overflow: auto;
+}
+
+.gsi-search-form {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(90px, 1fr)) 64px;
+  gap: 8px;
+  align-items: end;
+}
+
+.gsi-search-form label span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gsi-search-form input {
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--line);
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+.gsi-search-form button {
+  height: 30px;
+  border: 1px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.gsi-source {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gsi-source span {
+  margin-left: 8px;
+  color: var(--ink);
+}
+
+.gsi-result {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.gsi-status {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.compact-viewer {
+  max-height: 520px;
+  border: 1px solid var(--line-soft);
+}
+
+.gsi-grid {
+  min-width: 900px;
 }
 
 .sheet-grid {
@@ -558,10 +710,25 @@ input {
   display: none;
 }
 
+.history-filter-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.history-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .history-table-head,
 .history-item {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 150px 170px minmax(180px, 1fr) 120px;
+  grid-template-columns: 54px 160px minmax(180px, 1fr) 90px 70px 90px 90px;
   gap: 12px;
   align-items: center;
 }
@@ -601,9 +768,66 @@ input {
   font-weight: 700;
 }
 
+.history-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--brand);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.status-label {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+}
+
+.status-label.pending {
+  cursor: pointer;
+}
+
+.status-label.pending:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.status-label.done {
+  border-color: #bbf7d0;
+  color: var(--done);
+}
+
 .history-expired {
   color: #9ca3af;
   font-weight: 700;
+}
+
+.history-pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  color: var(--muted);
+}
+
+.history-pagination button {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.history-pagination button:disabled {
+  color: #9ca3af;
+  background: #f9fafb;
+  cursor: not-allowed;
 }
 
 .dev-grid article {
@@ -771,6 +995,7 @@ input {
     border-bottom: 1px solid var(--line);
     padding: 12px;
     overflow: visible;
+    display: block;
   }
 
   .brand-home {
@@ -846,6 +1071,33 @@ input {
     padding: 5px 6px;
   }
 
+  .gsi-search-form,
+  .gsi-result,
+  .compare-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compare-dialog {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+  }
+
+  .compare-grid {
+    overflow: auto;
+  }
+
+  .compare-pane {
+    min-height: 520px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .gsi-source span {
+    display: block;
+    margin: 4px 0 0;
+    overflow-wrap: anywhere;
+  }
+
   .dev-workspace,
   .history-workspace {
     grid-template-rows: auto minmax(0, 1fr);
@@ -865,7 +1117,7 @@ input {
   .history-toolbar,
   .history-table-head,
   .history-item {
-    min-width: 760px;
+    min-width: 910px;
   }
 
   .verify-page {
