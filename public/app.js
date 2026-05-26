@@ -55,12 +55,23 @@ const els = {
   sheetName: document.querySelector("#sheetName"),
   officeBtn: document.querySelector("#officeBtn"),
   devViewBtn: document.querySelector("#devViewBtn"),
+  historyViewBtn: document.querySelector("#historyViewBtn"),
   backToMainBtn: document.querySelector("#backToMainBtn"),
+  backFromHistoryBtn: document.querySelector("#backFromHistoryBtn"),
   mainView: document.querySelector("#mainView"),
   devView: document.querySelector("#devView"),
+  historyView: document.querySelector("#historyView"),
   logStream: document.querySelector("#logStream"),
-  logSearch: document.querySelector("#logSearch"),
   rowCount: document.querySelector("#rowCount"),
+  requestForm: document.querySelector("#requestForm"),
+  requestTitle: document.querySelector("#requestTitle"),
+  requestBody: document.querySelector("#requestBody"),
+  requestImage: document.querySelector("#requestImage"),
+  imagePreview: document.querySelector("#imagePreview"),
+  requestList: document.querySelector("#requestList"),
+  clearRequestsBtn: document.querySelector("#clearRequestsBtn"),
+  historyList: document.querySelector("#historyList"),
+  clearHistoryBtn: document.querySelector("#clearHistoryBtn"),
 };
 
 function nowTime() {
@@ -92,8 +103,7 @@ function addLog(message, type = "info") {
 }
 
 function renderLogs() {
-  const query = els.logSearch.value.trim().toLowerCase();
-  const logs = state.logs.filter((log) => !query || log.message.toLowerCase().includes(query));
+  const logs = state.logs;
   els.logStream.innerHTML = [
     `<div class="log-day">${todayLabel()}</div>`,
     ...logs.map((log) => `
@@ -114,6 +124,58 @@ function setStep(index) {
   });
 }
 
+function setServerStatus(text) {
+  if (els.serverStatus) els.serverStatus.textContent = text;
+}
+
+function showView(view) {
+  els.mainView.classList.toggle("hidden", view !== "main");
+  els.devView.classList.toggle("hidden", view !== "dev");
+  els.historyView.classList.toggle("hidden", view !== "history");
+}
+
+function getHistory() {
+  try {
+    return JSON.parse(localStorage.getItem("tojiJobHistory") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(history) {
+  localStorage.setItem("tojiJobHistory", JSON.stringify(history));
+}
+
+function upsertHistory(item) {
+  const history = getHistory().filter((entry) => entry.jobId !== item.jobId);
+  history.unshift(item);
+  saveHistory(history.slice(0, 100));
+  renderHistory();
+}
+
+function renderHistory() {
+  const history = getHistory();
+  if (!history.length) {
+    els.historyList.innerHTML = `<div class="empty-list">아직 작업 히스토리가 없습니다.</div>`;
+    return;
+  }
+  els.historyList.innerHTML = history.map((item) => {
+    const expired = item.expiresAt && Date.now() > Date.parse(item.expiresAt);
+    const download = expired
+      ? `<span class="history-expired">만료됨</span>`
+      : `<a href="${item.downloadUrl}" download>다운로드</a>`;
+    return `
+      <div class="history-item">
+        <div><strong>${escapeHtml(item.fileName || "-")}</strong><span>업로드 파일</span></div>
+        <div><strong>${escapeHtml(item.version || "-")}</strong><span>버전</span></div>
+        <div><strong>${escapeHtml(item.createdAt || "-")}</strong><span>작업일시</span></div>
+        <div><strong>${escapeHtml(item.savedFileName || "-")}</strong><span>다운로드 파일</span></div>
+        <div>${download}<br><span>${escapeHtml(item.expiresAt ? `만료 ${item.expiresAt.slice(0, 10)}` : "")}</span></div>
+      </div>
+    `;
+  }).join("");
+}
+
 function formatBytes(bytes) {
   if (!bytes) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
@@ -127,8 +189,25 @@ function chooseFile(file) {
   els.fileName.textContent = file.name;
   els.fileMeta.textContent = `${formatBytes(file.size)} · 업로드 준비 완료`;
   els.processBtn.disabled = false;
-  els.serverStatus.textContent = "파일 선택";
+  els.processBtn.classList.remove("complete");
+  els.processBtn.textContent = "파일 분석";
+  setServerStatus("파일 선택");
   addLog(`Selected file: ${file.name} (${formatBytes(file.size)})`);
+  upsertHistory({
+    jobId: `pending-${Date.now()}`,
+    fileName: file.name,
+    version: "분석 전",
+    createdAt: new Intl.DateTimeFormat("ko-KR", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date()),
+    savedFileName: "",
+    downloadUrl: "",
+    expiresAt: "",
+  });
 }
 
 function renderHead() {
@@ -188,7 +267,7 @@ async function poll(jobId) {
 
   if (job.status === "failed") {
     clearInterval(state.timer);
-    els.serverStatus.textContent = "실패";
+    setServerStatus("실패");
     addLog(job.error || "처리 실패", "error");
     els.processBtn.disabled = false;
     return;
@@ -197,17 +276,36 @@ async function poll(jobId) {
   if (job.status === "done") {
     clearInterval(state.timer);
     setStep(3);
-    els.steps.at(-1).classList.add("done");
-    els.serverStatus.textContent = "완료";
+    els.steps.at(-1)?.classList.add("done");
+    setServerStatus("완료");
     els.downloadBtn.href = job.downloadUrl;
     els.downloadBtn.classList.remove("disabled");
+    els.downloadBtn.classList.add("complete");
+    els.downloadBtn.textContent = "엑셀 다운로드 가능";
     state.currentJobId = job.id;
     els.savePath.textContent = job.savedPath ? `저장됨: ${job.savedPath}` : "저장 위치를 확인하지 못했습니다.";
     els.summaryText.textContent = `${job.caseCount || 0}건을 자동정리 탭에 작성했습니다.`;
     els.sheetName.textContent = job.sheetName || "자동정리";
     addLog(`Completed: ${job.caseCount || 0} rows written to ${job.sheetName || "자동정리"}`, "success");
+    upsertHistory({
+      jobId: job.id,
+      fileName: job.fileName,
+      version: job.savedFileName?.match(/수정v\d+/)?.[0] || "",
+      createdAt: new Intl.DateTimeFormat("ko-KR", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date()),
+      savedFileName: job.savedFileName,
+      downloadUrl: job.downloadUrl,
+      expiresAt: job.expiresAt,
+    });
     renderPreview(job.preview);
     els.processBtn.disabled = false;
+    els.processBtn.classList.add("complete");
+    els.processBtn.textContent = "분석 완료";
   }
 }
 
@@ -215,10 +313,14 @@ async function startProcess() {
   if (!state.file) return;
   state.lastProgress = "";
   els.processBtn.disabled = true;
+  els.processBtn.classList.remove("complete");
+  els.processBtn.textContent = "분석 중";
   els.downloadBtn.classList.add("disabled");
+  els.downloadBtn.classList.remove("complete");
+  els.downloadBtn.textContent = "엑셀 다운로드";
   els.downloadBtn.href = "#";
   els.savePath.textContent = "저장 위치는 완료 후 표시됩니다.";
-  els.serverStatus.textContent = "처리 중";
+  setServerStatus("처리 중");
   setStep(0);
   addLog("Uploading workbook...");
 
@@ -228,13 +330,13 @@ async function startProcess() {
   const data = await response.json();
   if (!response.ok) {
     els.processBtn.disabled = false;
-    els.serverStatus.textContent = "오류";
+    setServerStatus("오류");
     throw new Error(data.error || "업로드 실패");
   }
   addLog(`Job accepted: ${data.jobId}`);
   state.timer = setInterval(() => poll(data.jobId).catch((error) => {
     clearInterval(state.timer);
-    els.serverStatus.textContent = "오류";
+    setServerStatus("오류");
     addLog(error.message, "error");
     els.processBtn.disabled = false;
   }), 1200);
@@ -267,16 +369,113 @@ async function openOfficeEditor() {
   window.location.href = `/api/m365/start/${state.currentJobId}`;
 }
 
-els.logSearch.addEventListener("input", renderLogs);
-
 els.devViewBtn.addEventListener("click", () => {
-  els.mainView.classList.add("hidden");
-  els.devView.classList.remove("hidden");
+  showView("dev");
 });
 
 els.backToMainBtn.addEventListener("click", () => {
-  els.devView.classList.add("hidden");
-  els.mainView.classList.remove("hidden");
+  showView("main");
+});
+
+els.historyViewBtn.addEventListener("click", () => {
+  renderHistory();
+  showView("history");
+});
+
+els.backFromHistoryBtn.addEventListener("click", () => {
+  showView("main");
+});
+
+function getRequests() {
+  try {
+    return JSON.parse(localStorage.getItem("tojiFeatureRequests") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveRequests(requests) {
+  localStorage.setItem("tojiFeatureRequests", JSON.stringify(requests));
+}
+
+function renderRequests() {
+  const requests = getRequests();
+  if (!requests.length) {
+    els.requestList.innerHTML = `<div class="empty-list">아직 등록된 기능 요청이 없습니다.</div>`;
+    return;
+  }
+  els.requestList.innerHTML = requests.map((item) => `
+    <article class="request-item">
+      <h2>${escapeHtml(item.title)}</h2>
+      <time>${escapeHtml(item.createdAt)}</time>
+      <p>${escapeHtml(item.body)}</p>
+      ${item.image ? `<img src="${item.image}" alt="첨부 이미지" />` : ""}
+    </article>
+  `).join("");
+}
+
+function readImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) return resolve("");
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+els.requestImage.addEventListener("change", async () => {
+  const image = await readImage(els.requestImage.files[0]);
+  els.imagePreview.innerHTML = image ? `<img src="${image}" alt="첨부 이미지 미리보기" />` : "첨부 이미지 없음";
+});
+
+els.requestForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const image = await readImage(els.requestImage.files[0]);
+  const requests = getRequests();
+  requests.unshift({
+    id: Date.now(),
+    title: els.requestTitle.value.trim(),
+    body: els.requestBody.value.trim(),
+    image,
+    createdAt: new Intl.DateTimeFormat("ko-KR", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date()),
+  });
+  saveRequests(requests);
+  els.requestForm.reset();
+  els.imagePreview.textContent = "첨부 이미지 없음";
+  renderRequests();
+});
+
+els.clearRequestsBtn.addEventListener("click", () => {
+  if (!confirm("등록된 기능 요청을 모두 삭제할까요?")) return;
+  saveRequests([]);
+  renderRequests();
+});
+
+els.clearHistoryBtn.addEventListener("click", () => {
+  if (!confirm("작업 히스토리를 모두 삭제할까요?")) return;
+  saveHistory([]);
+  renderHistory();
+});
+
+els.savePath.addEventListener("click", async () => {
+  if (!state.currentJobId) {
+    addLog("아직 열 저장 경로가 없습니다.", "error");
+    return;
+  }
+  const response = await fetch(`/api/open-folder/${state.currentJobId}`, { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) {
+    addLog(result.error || "저장 폴더를 열지 못했습니다.", "error");
+    return;
+  }
+  addLog(`Opened folder: ${result.folder}`);
 });
 
 ["dragenter", "dragover"].forEach((eventName) => {
@@ -297,3 +496,5 @@ els.dropzone.addEventListener("drop", (event) => chooseFile(event.dataTransfer.f
 
 renderHead();
 addLog("Waiting for workbook upload.");
+renderRequests();
+renderHistory();

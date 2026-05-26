@@ -19,9 +19,15 @@ const MS_CLIENT_ID = process.env.MS_CLIENT_ID || "";
 const MS_CLIENT_SECRET = process.env.MS_CLIENT_SECRET || "";
 const MS_TENANT_ID = process.env.MS_TENANT_ID || "common";
 const MS_SCOPES = "offline_access User.Read Files.ReadWrite";
+const DOWNLOAD_TTL_DAYS = Number(process.env.DOWNLOAD_TTL_DAYS || 14);
 
 const jobs = new Map();
 const authStates = new Map();
+const realtyCodeCache = {
+  sido: null,
+  sigungu: new Map(),
+  dongri: new Map()
+};
 
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -67,6 +73,10 @@ function microsoftConfigured(req) {
   };
 }
 
+function expiresAtFromNow() {
+  return new Date(Date.now() + DOWNLOAD_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
+
 async function readBody(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -97,6 +107,59 @@ async function postFormJson(url, params) {
     throw new Error(data.error?.message || data.error || `API 호출 실패: ${response.status}`);
   }
   return data;
+}
+
+async function realtyList(path, params) {
+  const data = await postFormJson(`https://www.realtyprice.kr${path}`, params);
+  return data?.model?.list || [];
+}
+
+async function enrichGsiParams(params) {
+  const enriched = { ...params };
+  if (enriched.sido && enriched.sigungu && enriched.dongri && enriched.reg && enriched.eub) {
+    return enriched;
+  }
+
+  if (!realtyCodeCache.sido) {
+    realtyCodeCache.sido = await realtyList("/notice/m/bjd/getSido.do", { notice_year: "" });
+  }
+  const sido = realtyCodeCache.sido.find((row) => row.NAME === enriched.sido_nm);
+  if (!sido) throw new Error(`시도 코드를 찾지 못했습니다: ${enriched.sido_nm || ""}`);
+
+  if (!realtyCodeCache.sigungu.has(sido.CODE)) {
+    realtyCodeCache.sigungu.set(
+      sido.CODE,
+      await realtyList("/notice/m/bjd/getSigungu.do", { notice_year: "", reg1: sido.CODE })
+    );
+  }
+  const sigungu = realtyCodeCache.sigungu.get(sido.CODE).find((row) => row.NAME === enriched.sigungu_nm);
+  if (!sigungu) throw new Error(`시군구 코드를 찾지 못했습니다: ${enriched.sigungu_nm || ""}`);
+
+  if (!realtyCodeCache.dongri.has(sigungu.CODE)) {
+    realtyCodeCache.dongri.set(
+      sigungu.CODE,
+      await realtyList("/notice/m/bjd/getDongri.do", { notice_year: "", reg: sigungu.CODE })
+    );
+  }
+  const dongri = realtyCodeCache.dongri.get(sigungu.CODE).find((row) => row.NAME === enriched.dongri_nm);
+  if (!dongri) throw new Error(`읍면동 코드를 찾지 못했습니다: ${enriched.dongri_nm || ""}`);
+
+  return {
+    ...enriched,
+    sido: sido.CODE,
+    sido_nm: sido.NAME,
+    sigungu: sigungu.CODE,
+    sigungu_nm: sigungu.NAME,
+    road_reg: sigungu.CODE,
+    road_initial: enriched.road_initial || "",
+    road_initial_nm: enriched.road_initial_nm || "",
+    road_code: enriched.road_code || "",
+    road_code_nm: enriched.road_code_nm || "",
+    dongri: dongri.CODE,
+    dongri_nm: dongri.NAME,
+    reg: sigungu.CODE,
+    eub: dongri.CODE,
+  };
 }
 
 function parseMultipart(buffer, contentTypeHeader) {
@@ -202,7 +265,9 @@ async function startJob(req, res) {
     output,
     savedFileName: saveTarget.fileName,
     savedFolder: saveTarget.folder,
-    savedPath: saveTarget.outputPath
+    savedPath: saveTarget.outputPath,
+    createdAt: new Date().toISOString(),
+    expiresAt: expiresAtFromNow()
   });
 
   const child = spawn(PYTHON, [path.join(ROOT, "processor.py"), input, output, summary], {
@@ -238,7 +303,8 @@ async function startJob(req, res) {
         downloadUrl: `/api/download/${jobId}`,
         savedFileName: saveTarget.fileName,
         savedFolder: saveTarget.folder,
-        savedPath: saveTarget.outputPath
+        savedPath: saveTarget.outputPath,
+        expiresAt: job.expiresAt
       });
     } catch (error) {
       job.status = "failed";
@@ -262,11 +328,30 @@ async function download(req, res, id) {
     res.end("Not found");
     return;
   }
+  if (job.expiresAt && Date.now() > Date.parse(job.expiresAt)) {
+    res.writeHead(410);
+    res.end("Download expired");
+    return;
+  }
   res.writeHead(200, {
     "Content-Type": contentType(job.output),
     "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(job.savedFileName || `토지거래_자동정리_${id}.xlsx`)}`
   });
   fs.createReadStream(job.output).pipe(res);
+}
+
+async function openOutputFolder(req, res, id) {
+  const job = jobs.get(id);
+  if (!job || job.status !== "done" || !job.savedFolder) {
+    sendJson(res, 404, { error: "열 수 있는 저장 폴더가 없습니다." });
+    return;
+  }
+  if (process.platform !== "win32") {
+    sendJson(res, 400, { error: "배포 서버에서는 사용자 PC의 로컬 폴더를 직접 열 수 없습니다. 다운로드한 파일은 브라우저 다운로드 폴더에서 확인해 주세요." });
+    return;
+  }
+  spawn("explorer.exe", [job.savedFolder], { detached: true, stdio: "ignore" }).unref();
+  sendJson(res, 200, { ok: true, folder: job.savedFolder });
 }
 
 async function m365Status(req, res) {
@@ -389,13 +474,14 @@ async function microsoftCallback(req, res, url) {
 async function verifyGsi(req, res, url) {
   const params = Object.fromEntries(url.searchParams.entries());
   try {
-    const data = await postFormJson("https://www.realtyprice.kr/notice/m/gsi/getList.do", params);
+    const enrichedParams = await enrichGsiParams(params);
+    const data = await postFormJson("https://www.realtyprice.kr/notice/m/gsi/getList.do", enrichedParams);
     sendJson(res, 200, {
       source: "realtyprice.kr",
       method: "POST",
       endpoint: "https://www.realtyprice.kr/notice/m/gsi/getList.do",
       searchPage: "https://www.realtyprice.kr/notice/m/gsi/search.do",
-      params,
+      params: enrichedParams,
       rows: data?.model?.list || [],
       raw: data
     });
@@ -421,6 +507,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/process") return startJob(req, res);
     if (req.method === "GET" && url.pathname.startsWith("/api/job/")) return handleJob(req, res, url.pathname.split("/").pop());
     if (req.method === "GET" && url.pathname.startsWith("/api/download/")) return download(req, res, url.pathname.split("/").pop());
+    if (req.method === "POST" && url.pathname.startsWith("/api/open-folder/")) return openOutputFolder(req, res, url.pathname.split("/").pop());
     if (req.method === "GET" && url.pathname === "/api/m365/status") return m365Status(req, res);
     if (req.method === "GET" && url.pathname.startsWith("/api/m365/start/")) return m365Start(req, res, url.pathname.split("/").pop());
     if (req.method === "GET" && url.pathname === "/api/realtyprice/gsi") return verifyGsi(req, res, url);

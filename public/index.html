@@ -12,36 +12,26 @@
         <h1>토지거래 정리</h1>
 
         <label class="file-row" id="dropzone">
-          <span>파일</span>
           <input id="fileInput" type="file" accept=".xlsx" />
-          <strong id="fileName">선택 안 됨</strong>
-          <small id="fileMeta">클릭해서 .xlsx 선택</small>
+          <strong id="fileName">파일 업로드</strong>
+          <small id="fileMeta">.xlsx 파일 선택</small>
         </label>
 
-        <button class="text-button primary" id="processBtn" disabled>정리 시작</button>
+        <button class="text-button primary" id="processBtn" disabled>파일 분석</button>
         <a class="text-button disabled" id="downloadBtn" href="#" download>엑셀 다운로드</a>
-        <button class="text-button" type="button" id="officeBtn">Office 365에서 편집</button>
-        <button class="text-button" type="button" id="devViewBtn">개발중 서비스 보기</button>
 
         <dl class="meta-list">
           <div>
-            <dt>상태</dt>
-            <dd id="serverStatus">대기</dd>
-          </div>
-          <div>
-            <dt>단계</dt>
-            <dd id="steps">
-              <span class="active">업로드</span>
-              <span>분석</span>
-              <span>조회</span>
-              <span>저장</span>
-            </dd>
-          </div>
-          <div>
-            <dt>저장</dt>
+            <dt>저장 경로</dt>
             <dd id="savePath">완료 후 표시</dd>
           </div>
         </dl>
+
+        <div class="secondary-actions">
+          <button class="text-button muted" type="button" id="officeBtn">Office 365에서 편집</button>
+          <button class="text-button muted" type="button" id="devViewBtn">개발예정 기능</button>
+          <button class="text-button muted" type="button" id="historyViewBtn">작업 히스토리</button>
+        </div>
       </aside>
 
       <section class="workspace" id="mainView">
@@ -56,7 +46,6 @@
         <section class="log-area">
           <div class="section-header">
             <strong>처리 로그</strong>
-            <input id="logSearch" type="search" placeholder="로그 검색" />
           </div>
           <div class="log-stream" id="logStream" aria-live="polite"></div>
         </section>
@@ -84,64 +73,40 @@
       <section class="workspace dev-workspace hidden" id="devView">
         <header class="topbar">
           <div>
-            <strong>개발중 서비스</strong>
-            <span>KAIS 원본 거래자료를 손실 없이 정리하고 평가용으로 판정하는 확장 화면입니다.</span>
+            <strong>개발예정 기능</strong>
           </div>
           <button class="plain-button" type="button" id="backToMainBtn">기존 화면으로</button>
         </header>
 
         <section class="dev-panel">
           <div class="section-header">
-            <strong>서비스 방향</strong>
+            <strong>기능 요청 게시판</strong>
           </div>
-          <div class="dev-grid">
-            <article>
-              <h2>1. 원본 거래목록 보존</h2>
-              <p>KAIS에서 내려받은 목록 컬럼을 누락 없이 보존합니다. 금액, 면적, 권리, 건물, 지분 정보를 임의로 합치지 않습니다.</p>
-              <ul>
-                <li>시군구, 소재지, 지번, 계약일자</li>
-                <li>단가, 물건총금액, 총금액</li>
-                <li>토지계약면적, 건물계약면적</li>
-                <li>거래구분, 직거래구분, 권리구분</li>
-              </ul>
-            </article>
+          <div class="board-layout">
+            <form class="request-form" id="requestForm">
+              <label>
+                <span>제목</span>
+                <input id="requestTitle" required placeholder="필요한 기능을 짧게 적어주세요" />
+              </label>
+              <label>
+                <span>내용</span>
+                <textarea id="requestBody" required placeholder="어떤 상황에서 필요한지, 어떤 결과가 나오면 좋은지 적어주세요"></textarea>
+              </label>
+              <label>
+                <span>이미지 첨부</span>
+                <input id="requestImage" type="file" accept="image/*" />
+              </label>
+              <div class="image-preview" id="imagePreview">첨부 이미지 없음</div>
+              <button class="text-button primary" type="submit">게시하기</button>
+            </form>
 
-            <article>
-              <h2>2. 상세정보 붙여넣기</h2>
-              <p>상세정보 창의 현재데이터 복사 내용을 붙여넣으면 토지/건물별 상세 행으로 분리합니다.</p>
-              <ul>
-                <li>상세물건번호, 상세물건구분</li>
-                <li>지목, 용도지역, 물건구분</li>
-                <li>전체면적, 전용면적, 물건금액</li>
-                <li>계약조건 및 기타 문장</li>
-              </ul>
-            </article>
-
-            <article>
-              <h2>3. 자동 판정</h2>
-              <p>원본 목록과 상세정보를 매칭해서 평가 검토용 판정 컬럼을 만듭니다.</p>
-              <ul>
-                <li>토지만</li>
-                <li>토지건물</li>
-                <li>집합건물</li>
-                <li>지분거래</li>
-                <li>확인필요</li>
-              </ul>
-            </article>
-
-            <article>
-              <h2>4. 결과 탭 구성</h2>
-              <p>자동정리 하나로 끝내지 않고, 근거를 추적할 수 있는 탭을 함께 만듭니다.</p>
-              <ul>
-                <li>원본_거래목록</li>
-                <li>자동정리</li>
-                <li>물건상세</li>
-                <li>매매및지분</li>
-                <li>계약조건</li>
-                <li>크롤링조회</li>
-                <li>검토결과</li>
-              </ul>
-            </article>
+            <div class="request-list">
+              <div class="request-list-head">
+                <strong>요청 목록</strong>
+                <button class="plain-button" type="button" id="clearRequestsBtn">전체 삭제</button>
+              </div>
+              <div id="requestList"></div>
+            </div>
           </div>
         </section>
 
@@ -185,6 +150,24 @@
               </table>
             </div>
           </div>
+        </section>
+      </section>
+
+      <section class="workspace history-workspace hidden" id="historyView">
+        <header class="topbar">
+          <div>
+            <strong>작업 히스토리</strong>
+            <span>업로드 파일과 다운로드 결과를 버전별로 확인합니다.</span>
+          </div>
+          <button class="plain-button" type="button" id="backFromHistoryBtn">기존 화면으로</button>
+        </header>
+
+        <section class="history-panel">
+          <div class="section-header">
+            <strong>파일 작업 기록</strong>
+            <button class="plain-button" type="button" id="clearHistoryBtn">히스토리 삭제</button>
+          </div>
+          <div class="history-list" id="historyList"></div>
         </section>
       </section>
     </main>
