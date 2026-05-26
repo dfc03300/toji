@@ -8,3 +8,5 @@ services:
     envVars:
       - key: PYTHON_EXE
         value: python3
+      - key: HOST
+        value: 0.0.0.0
