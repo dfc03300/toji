@@ -72,13 +72,21 @@ input {
   color: var(--ink);
 }
 
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
 .app-shell.sidebar-collapsed .sidebar {
   padding: 10px 6px;
   align-items: center;
 }
 
-.app-shell.sidebar-collapsed .sidebar-toggle {
-  margin: 0 auto;
+.app-shell.sidebar-collapsed .brand-row {
+  margin: 0;
+  justify-content: center;
 }
 
 .app-shell.sidebar-collapsed .brand-home,
@@ -91,7 +99,7 @@ input {
 
 .brand-home {
   width: 100%;
-  margin: 0 0 16px;
+  margin: 0;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1320,7 +1328,7 @@ input {
   }
 
   .sidebar-toggle {
-    margin: 0 0 10px auto;
+    margin: 0;
   }
 
   .app-shell.sidebar-collapsed .sidebar {
@@ -1330,8 +1338,12 @@ input {
     align-items: flex-end;
   }
 
-  .brand-home {
+  .brand-row {
     margin-bottom: 10px;
+  }
+
+  .brand-home {
+    margin-bottom: 0;
   }
 
   .file-row {

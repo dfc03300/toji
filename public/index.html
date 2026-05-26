@@ -9,10 +9,12 @@
   <body>
     <main class="app-shell" id="appShell">
       <aside class="sidebar">
-        <button class="sidebar-toggle" type="button" id="sidebarToggleBtn" aria-label="사이드바 접기" aria-expanded="true">‹</button>
-        <button class="brand-home" type="button" id="brandHomeBtn" aria-label="TojiWorks 메인 화면으로">
-          <strong>TojiWorks</strong>
-        </button>
+        <div class="brand-row">
+          <button class="brand-home" type="button" id="brandHomeBtn" aria-label="TojiWorks 메인 화면으로">
+            <strong>TojiWorks</strong>
+          </button>
+          <button class="sidebar-toggle" type="button" id="sidebarToggleBtn" aria-label="사이드바 접기" aria-expanded="true">‹</button>
+        </div>
 
         <label class="file-row" id="dropzone">
           <input id="fileInput" type="file" accept=".xlsx" />
