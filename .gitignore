@@ -1,0 +1,10 @@
+uploads/
+outputs/
+*.log
+server-*.log
+*.xlsx
+*.xls
+*.csv
+workbook_structure.json
+realtyprice_search.html
+inspect_unicode.py
