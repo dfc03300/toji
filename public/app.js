@@ -153,6 +153,7 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 function setStep(index) {
+  if (!els.steps.length) return;
   els.steps.forEach((step, i) => {
     step.classList.toggle("active", i === index);
     step.classList.toggle("done", i < index);
@@ -160,6 +161,7 @@ function setStep(index) {
 }
 
 function setServerStatus(text) {
+  if (!els.serverStatus) return;
   setText(els.serverStatus, text);
 }
 
@@ -540,7 +542,7 @@ async function poll(jobId) {
   if (job.status === "done") {
     clearInterval(state.timer);
     setStep(3);
-    els.steps.at(-1)?.classList.add("done");
+    if (els.steps.length) els.steps.at(-1)?.classList.add("done");
     setServerStatus("완료");
     els.downloadBtn.href = job.downloadUrl;
     els.downloadBtn.classList.remove("disabled");
@@ -549,8 +551,8 @@ async function poll(jobId) {
     state.currentJobId = job.id;
     if (els.saveCellsBtn) els.saveCellsBtn.disabled = false;
     if (els.batchRateBtn) els.batchRateBtn.disabled = false;
-    setText(els.summaryText, `${job.caseCount || 0}건을 자동정리 탭에 작성했습니다.`);
-    setText(els.sheetName, job.sheetName || "자동정리");
+    if (els.summaryText) setText(els.summaryText, `${job.caseCount || 0}건을 자동정리 탭에 작성했습니다.`);
+    if (els.sheetName) setText(els.sheetName, job.sheetName || "자동정리");
     addLog(`완료: ${job.caseCount || 0}건을 ${job.sheetName || "자동정리"} 탭에 기록했습니다.`, "success");
     addLog(`저장 폴더: ${job.savedFolder || "저장 위치를 확인하지 못했습니다."}`, job.savedFolder ? "success" : "error");
     if (job.warnings?.length) {
@@ -981,7 +983,7 @@ els.clearRequestsBtn.addEventListener("click", () => {
   });
 });
 
-els.dropzone.addEventListener("drop", (event) => chooseFile(event.dataTransfer.files[0]));
+els.dropzone.addEventListener("drop", (event) => chooseFile(event.dataTransfer.files[0]).catch((error) => addLog(error.message, "error")));
 
 const COL_UNIT_PRICE = headers.indexOf("단가(원/㎡)");
 const COL_TIME_RATE = headers.indexOf("시점수정치");

@@ -348,10 +348,13 @@ def selected_rows(ws, columns):
     trade_col = columns.get("거래시점")
     for row in range(columns.get("_header_row", 1) + 1, ws.max_row + 1):
         detail = norm(ws.cell(row, detail_col).value)
-        if detail in ("", "상세물건구분", "토지"):
+        if detail in ("", "상세물건구분"):
             continue
         value = ws.cell(row, source_col).value
         if value in (None, ""):
+            continue
+        # 토지 sub-rows have null 기호 (caught by value check above); reaching here means standalone land transaction
+        if detail == "토지" and (not isinstance(value, (int, float)) and not norm(str(value)).isdigit()):
             continue
         key = (norm(value), norm(ws.cell(row, jibun_col).value), norm(ws.cell(row, trade_col).value))
         if key in seen:
