@@ -160,6 +160,16 @@ input {
   margin-bottom: 4px;
 }
 
+.copy-path-button {
+  margin-left: 6px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
 .meta-list dd {
   margin: 0;
   line-height: 1.45;

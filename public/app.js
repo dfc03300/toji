@@ -49,6 +49,7 @@ const els = {
   steps: [...document.querySelectorAll("#steps span")],
   downloadBtn: document.querySelector("#downloadBtn"),
   savePath: document.querySelector("#savePath"),
+  copyPathBtn: document.querySelector("#copyPathBtn"),
   previewHead: document.querySelector("#previewHead"),
   previewBody: document.querySelector("#previewBody"),
   summaryText: document.querySelector("#summaryText"),
@@ -283,7 +284,7 @@ async function poll(jobId) {
     els.downloadBtn.classList.add("complete");
     els.downloadBtn.textContent = "엑셀 다운로드 가능";
     state.currentJobId = job.id;
-    els.savePath.textContent = job.savedPath ? `저장됨: ${job.savedPath}` : "저장 위치를 확인하지 못했습니다.";
+    els.savePath.textContent = job.savedPath || "저장 위치를 확인하지 못했습니다.";
     els.summaryText.textContent = `${job.caseCount || 0}건을 자동정리 탭에 작성했습니다.`;
     els.sheetName.textContent = job.sheetName || "자동정리";
     addLog(`Completed: ${job.caseCount || 0} rows written to ${job.sheetName || "자동정리"}`, "success");
@@ -476,6 +477,17 @@ els.savePath.addEventListener("click", async () => {
     return;
   }
   addLog(`Opened folder: ${result.folder}`);
+});
+
+els.copyPathBtn.addEventListener("click", async (event) => {
+  event.stopPropagation();
+  const text = els.savePath.textContent.trim();
+  if (!text || text === "완료 후 표시" || text === "저장 위치는 완료 후 표시됩니다.") {
+    addLog("복사할 저장 경로가 아직 없습니다.", "error");
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+  addLog("저장 경로를 클립보드에 복사했습니다.");
 });
 
 ["dragenter", "dragover"].forEach((eventName) => {
