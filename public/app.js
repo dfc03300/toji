@@ -20,6 +20,17 @@ const headers = [
   "크롤링상태",
 ];
 
+const columnLetters = ["", ...Array.from({ length: headers.length }, (_, index) => {
+  let n = index + 1;
+  let label = "";
+  while (n > 0) {
+    n -= 1;
+    label = String.fromCharCode(65 + (n % 26)) + label;
+    n = Math.floor(n / 26);
+  }
+  return label;
+})];
+
 const state = {
   file: null,
   timer: null,
@@ -40,6 +51,7 @@ const els = {
   previewBody: document.querySelector("#previewBody"),
   summaryText: document.querySelector("#summaryText"),
   sheetName: document.querySelector("#sheetName"),
+  officeBtn: document.querySelector("#officeBtn"),
 };
 
 function setStep(index) {
@@ -66,12 +78,19 @@ function chooseFile(file) {
 }
 
 function renderHead() {
-  els.previewHead.innerHTML = headers.map((header) => `<th>${header}</th>`).join("");
+  els.previewHead.innerHTML = [
+    `<th class="corner"></th>`,
+    ...headers.map((header, index) => `<th><span class="col-letter">${columnLetters[index + 1]}</span> ${header}</th>`),
+  ].join("");
 }
 
 function valueText(value) {
   if (value === null || value === undefined || value === "") return "";
-  if (typeof value === "number") return Number.isInteger(value) ? value.toLocaleString("ko-KR") : value.toLocaleString("ko-KR", { maximumFractionDigits: 4 });
+  if (typeof value === "number") {
+    return Number.isInteger(value)
+      ? value.toLocaleString("ko-KR")
+      : value.toLocaleString("ko-KR", { maximumFractionDigits: 4 });
+  }
   if (/^\d{4}-\d{2}-\d{2}/.test(String(value))) return String(value).slice(0, 10);
   return String(value);
 }
@@ -79,12 +98,16 @@ function valueText(value) {
 function renderPreview(rows) {
   renderHead();
   if (!rows?.length) {
-    els.previewBody.innerHTML = `<tr><td class="empty" colspan="${headers.length}">처리된 사례가 없습니다.</td></tr>`;
+    els.previewBody.innerHTML = `<tr><td class="row-head">1</td><td class="empty" colspan="${headers.length}">업로드 후 결과 미리보기가 표시됩니다.</td></tr>`;
     return;
   }
+
   els.previewBody.innerHTML = rows
-    .map((row) => {
-      return `<tr>${headers.map((header) => `<td>${valueText(row[header])}</td>`).join("")}</tr>`;
+    .map((row, rowIndex) => {
+      const cells = headers
+        .map((header) => `<td contenteditable="true" spellcheck="false">${valueText(row[header])}</td>`)
+        .join("");
+      return `<tr><td class="row-head">${rowIndex + 1}</td>${cells}</tr>`;
     })
     .join("");
 }
@@ -155,6 +178,10 @@ els.processBtn.addEventListener("click", () => startProcess().catch((error) => {
   els.progressText.innerHTML = `<span class="error">${error.message}</span>`;
   els.processBtn.disabled = false;
 }));
+
+els.officeBtn.addEventListener("click", () => {
+  els.progressText.textContent = "Office 365 편집 연동은 Microsoft 로그인, OneDrive 업로드, Graph API 연결이 필요합니다.";
+});
 
 ["dragenter", "dragover"].forEach((eventName) => {
   els.dropzone.addEventListener(eventName, (event) => {
