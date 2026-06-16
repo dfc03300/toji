@@ -500,6 +500,12 @@ function renderSuggestions(items) {
   els.gsiSuggestList.classList.remove("hidden");
 }
 
+function renderSuggestionLoading() {
+  els.gsiSuggestList._items = [];
+  els.gsiSuggestList.innerHTML = `<div class="suggest-loading"><span class="lookup-spinner" aria-hidden="true"></span>realtyprice.kr 실시간 조회 중</div>`;
+  els.gsiSuggestList.classList.remove("hidden");
+}
+
 async function fetchGsiSuggestions() {
   const keyword = els.gsiKeyword.value.trim();
   selectedGsiSuggestion = null;
@@ -509,6 +515,7 @@ async function fetchGsiSuggestions() {
     return;
   }
   setText(els.gsiSelectedAddress, "캐시 미사용 · realtyprice.kr API에서 실시간 주소 후보를 확인 중입니다.");
+  renderSuggestionLoading();
   const params = new URLSearchParams({ mode: gsiSearchMode(), q: keyword });
   const response = await fetch(`/api/realtyprice/gsi/suggest?${params.toString()}`, { cache: "no-store" });
   const data = await response.json();

@@ -211,6 +211,21 @@ function splitKeywordNumber(keyword) {
   };
 }
 
+function looksLikeRoadKeyword(keyword) {
+  const parsed = splitKeywordNumber(keyword);
+  const text = compactText(parsed.text || keyword);
+  return /(대로|로|길|번길)$/.test(text);
+}
+
+function hangulInitial(value) {
+  const char = String(value || "").trim()[0];
+  if (!char) return "";
+  const code = char.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return "";
+  const initials = ["ㄱ", "ㄲ", "ㄴ", "ㄷ", "ㄸ", "ㄹ", "ㅁ", "ㅂ", "ㅃ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅉ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"];
+  return initials[Math.floor((code - 0xac00) / 588)] || "";
+}
+
 function gsiParamsForParcel(sido, sigungu, dongri, parsed) {
   return {
     search_detail_gbn: "2",
@@ -320,7 +335,7 @@ async function getRoadList(sigunguCode, initialCode) {
   return realtyCodeCache.road.get(key);
 }
 
-async function candidateRegions(keyword) {
+async function candidateRegions(keyword, options = {}) {
   const q = compactText(keyword);
   const parsed = splitKeywordNumber(keyword);
   const hasRegionText = compactText(parsed.text).length >= 2;
@@ -331,10 +346,10 @@ async function candidateRegions(keyword) {
   for (const sido of selectedSidos) {
     const sigungus = await getSigunguList(sido.CODE);
     const sigunguMatches = sigungus.filter((sigungu) => keywordMatchesName(q, sigungu.NAME)).slice(0, 12);
-    const orderedSigungus = [...(sigunguMatches.length ? sigunguMatches : (hasRegionText ? sigungus.slice(0, 10) : sigungus))];
+    const orderedSigungus = [...(sigunguMatches.length ? sigunguMatches : (options.scanAll ? sigungus : (hasRegionText ? sigungus.slice(0, 10) : sigungus)))];
     for (const sigungu of orderedSigungus) {
       regions.push({ sido, sigungu });
-      if (regions.length >= (hasRegionText ? 24 : 260)) return regions;
+      if (regions.length >= (options.limit || (hasRegionText ? 24 : 260))) return regions;
     }
   }
   return regions;
@@ -345,6 +360,9 @@ async function suggestParcel(keyword) {
   const q = compactText(parsed.text || keyword);
   const hasNumber = Boolean(parsed.number && parsed.bun1 !== "0000");
   const hasRegionText = compactText(parsed.text).length >= 2;
+  if (looksLikeRoadKeyword(keyword)) {
+    return [];
+  }
   if (hasNumber && !hasRegionText) {
     return [];
   }
@@ -396,9 +414,15 @@ async function suggestRoad(keyword) {
   const parsed = splitKeywordNumber(keyword);
   const q = compactText(parsed.text || keyword);
   const suggestions = [];
-  for (const { sido, sigungu } of await candidateRegions(keyword)) {
+  const roadInitial = hangulInitial(parsed.text || keyword);
+  const regions = await candidateRegions(keyword, {
+    scanAll: looksLikeRoadKeyword(keyword),
+    limit: looksLikeRoadKeyword(keyword) ? 420 : undefined
+  });
+  for (const { sido, sigungu } of regions) {
     const initials = await getRoadInitialList(sigungu.CODE);
-    for (const initial of initials) {
+    const selectedInitials = roadInitial ? initials.filter((initial) => initial.CODE === roadInitial || initial.NAME === roadInitial) : initials;
+    for (const initial of selectedInitials) {
       const roads = await getRoadList(sigungu.CODE, initial.CODE);
       const matches = roads.filter((road) => {
         return keywordMatchesName(q, road.NAME);
@@ -858,6 +882,8 @@ async function suggestGsi(req, res, url) {
       suggestions = await suggestRoad(keyword);
     } else if (mode === "parcel") {
       suggestions = await suggestParcel(keyword);
+    } else if (looksLikeRoadKeyword(keyword)) {
+      suggestions = await suggestRoad(keyword);
     } else {
       const [parcelSuggestions, roadSuggestions] = await Promise.all([
         suggestParcel(keyword),

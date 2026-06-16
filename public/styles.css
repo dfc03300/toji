@@ -720,13 +720,36 @@ input {
 }
 
 .suggest-list span,
-.suggest-empty {
+.suggest-empty,
+.suggest-loading {
   color: var(--muted);
   font-size: 12px;
 }
 
-.suggest-empty {
+.suggest-empty,
+.suggest-loading {
   padding: 9px;
+}
+
+.suggest-loading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.lookup-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #e5e7eb;
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: lookup-spin 0.8s linear infinite;
+}
+
+@keyframes lookup-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .gsi-addr-row {
